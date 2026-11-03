@@ -37,3 +37,15 @@ class LLMProviderError(AppError):
 class InvalidFileError(AppError):
     def __init__(self, message: str) -> None:
         super().__init__(422, "INVALID_FILE", message)
+
+
+class AccountNotFoundError(NotFoundError):
+    def __init__(self, account_id: str) -> None:
+        # «non trovato» anche quando il conto esiste ma è di un altro portafoglio:
+        # la risposta non deve dire a chi chiede quali conti esistono
+        super().__init__(f"Il conto {account_id} non è nel tuo portafoglio")
+        self.code = "ACCOUNT_NOT_FOUND"
+
+class InvalidPeriodError(AppError):
+    def __init__(self) -> None:
+        super().__init__(422, "INVALID_PERIOD", "La data di inizio viene dopo quella di fine")

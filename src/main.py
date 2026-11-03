@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from src.api import categorize, chat, glossary, movements
+from src.api import accounts, categorize, chat, glossary, movements
 from src.config import settings
 from src.exceptions import AppError, RateLimitError
 from src.types.error import ErrorResponse, ValidationDetail
@@ -161,3 +161,4 @@ app.include_router(chat.router)
 app.include_router(glossary.router)
 app.include_router(categorize.router)
 app.include_router(movements.router)
+app.include_router(accounts.router)

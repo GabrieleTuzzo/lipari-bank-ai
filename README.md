@@ -26,3 +26,12 @@ Per eseguire i test:
 ```powershell
 uv run pytest
 ```
+
+## Modello dati
+
+I beneficiari appartengono a un cliente; i mandati collegano un conto al beneficiario;
+le carte appartengono a un conto e registrano il plafond.
+
+- Un mandato è un'autorizzazione di pagamento e deve restare associato al beneficiario con cui è stato conferito.
+- La cascata cancellerebbe la traccia del mandato; `SET NULL` lo lascerebbe senza controparte.
+- `ON DELETE RESTRICT` rifiuta quindi la cancellazione del beneficiario finché esistono mandati collegati.
