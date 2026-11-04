@@ -1,5 +1,5 @@
 # src/db/repos.py — l'unico posto che sa che esiste un database
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -58,6 +58,16 @@ class ChatRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def cost_between(self, inizio: datetime, fine: datetime) -> Decimal:
+        """Quanto sono costati i messaggi scritti in un intervallo: la somma, o zero."""
+        speso = await self.session.scalar(
+            select(func.coalesce(func.sum(ChatMessage.cost_eur), 0)).where(
+                ChatMessage.created_at >= inizio, ChatMessage.created_at < fine
+            )
+        )
+        return Decimal(str(speso)) if speso is not None else Decimal("0")
+
+
 class AccountRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -79,6 +89,15 @@ class AccountRepository:
             .order_by(Account.label)
         )
         return list((await self.session.scalars(stmt)).all())
+
+    async def ids_in_portfolio(self, username: str) -> set[str]:
+        """Gli IBAN dei conti dei clienti nel portafoglio di questo operatore."""
+        stmt = (
+            select(Account.id)
+            .join(Customer, Customer.id == Account.customer_id)
+            .where(Customer.operator == username)
+        )
+        return set((await self.session.scalars(stmt)).all())
 
 
 class MovementRepository:

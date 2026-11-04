@@ -1,6 +1,7 @@
 # src/config.py — la configurazione: se manca qualcosa, il progetto non parte e dice cosa
 import re
 import sys
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import Field, ValidationError
@@ -36,6 +37,7 @@ class Settings(BaseSettings):
     default_model: str = "gpt-4o-mini"
     embedding_model: str = "text-embedding-3-small"
     max_tokens_per_request: int = 2000
+    daily_cost_limit_eur: Decimal = Field(default=Decimal("10.00"), gt=0)
 
 
 def spiega(errore: ValidationError) -> str:
