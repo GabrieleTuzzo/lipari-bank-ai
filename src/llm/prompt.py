@@ -1,7 +1,7 @@
 from pathlib import Path
 
 _PROMPT_DIR = Path(__file__).parent / "prompts"
-_PROMPT_NAMES = {"chat_system_v1", "categorize_system_v1"}
+_PROMPT_NAMES = {"chat_system_v1", "categorize_system_v1", "advice_system_v1"}
 
 
 def load_prompt(name: str) -> str:

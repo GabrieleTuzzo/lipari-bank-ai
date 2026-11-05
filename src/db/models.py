@@ -15,7 +15,8 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import JSON, Index, Integer, String, Text
 from src.db.session import Base
 
 
@@ -128,3 +129,22 @@ class Card(Base):
     plafond: Mapped[Decimal] = mapped_column(Numeric(12, 2))
 
     account: Mapped["Account"] = relationship(back_populates="cards")
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+    __table_args__ = (
+        # dichiarato anche nel modello: altrimenti la prossima --autogenerate lo cancella
+        Index(
+            "ix_document_chunks_embedding",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=gen_uuid)
+    document_id: Mapped[str] = mapped_column(String, index=True)
+    chunk_index: Mapped[int] = mapped_column(Integer)
+    content: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float]] = mapped_column(Vector(1536))
+    chunk_metadata: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)

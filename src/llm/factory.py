@@ -9,6 +9,7 @@ from src.config import settings
 from src.exceptions import AppError
 from src.llm.anthropic_provider import AnthropicProvider
 from src.llm.client import LLMProvider
+from src.llm.embedding_client import EmbeddingClient
 from src.llm.openai_provider import OpenAIProvider
 
 
@@ -52,3 +53,9 @@ def get_openai() -> AsyncOpenAI:
 @cache
 def get_instructor() -> instructor.AsyncInstructor:
     return instructor.from_openai(_openai())
+
+
+# src/llm/factory.py — in fondo
+def get_embedder() -> EmbeddingClient:
+    # lo stesso modello per i documenti e per le domande: è la regola che non si viola
+    return EmbeddingClient(_openai(), settings.embedding_model)

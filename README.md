@@ -27,6 +27,18 @@ Per eseguire i test:
 uv run pytest
 ```
 
+## Ricerca documentale
+
+L'endpoint `POST /api/ai/advice` recupera fino a 20 passaggi, li riordina con il modello
+configurato e usa al massimo i primi 5 per generare la risposta. La risposta include
+`retrieved_chunks`, `rerank_tokens_used`, `rerank_cost_eur` e `rerank_latency_ms`;
+`tokens_used` e `cost_eur` comprendono sia il riordino sia la generazione. Se c'è un solo
+passaggio, il riordino viene saltato.
+
+Per misurare il miglioramento del recupero serve confrontare top-5 e top-20 riordinato su
+domande con passaggi rilevanti etichettati: i test sintetici verificano il flusso e il calcolo
+del costo, non stimano la qualità sul corpus reale.
+
 ## Modello dati
 
 I beneficiari appartengono a un cliente; i mandati collegano un conto al beneficiario;
