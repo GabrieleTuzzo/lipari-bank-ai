@@ -4,12 +4,13 @@ from decimal import Decimal
 
 import pytest
 
+from src.auth.deps import UserContext
 from src.llm.embedding_client import EmbeddingClient
+from src.llm.rewriter import QueryRewriter
 from src.llm.types import LLMResponse, Message, ToolSpec
 from src.services.rag_service import RAGService
 from src.services.reranking_service import RerankingError, RerankingService
 from src.services.retrieval_service import RetrievalResult, RetrievalService
-from src.types.advice import AdviceRequest
 
 
 class ModelloDiTest:
@@ -48,7 +49,9 @@ class RecuperoDiTest(RetrievalService):
         self.passages = passages
         self.top_k: int | None = None
 
-    async def search(self, query_vec: list[float], top_k: int = 5) -> list[RetrievalResult]:
+    async def search_for_user(
+        self, query_vec: list[float], role: str, top_k: int = 5
+    ) -> list[RetrievalResult]:
         self.top_k = top_k
         return self.passages[:top_k]
 
@@ -75,10 +78,14 @@ async def test_rag_reranks_20_candidates_and_reports_per_question_cost() -> None
         retrieval,
         EmbedderDiTest(),
         llm,
+        QueryRewriter(llm, "", enabled=False),
         "Prompt",
     )
 
-    response = await service.advise(AdviceRequest(question="Qual è la risposta corretta?"))
+    response = await service.advise(
+        "Qual è la risposta corretta?",
+        UserContext(username="test", role="operator"),
+    )
 
     baseline_recall = len({p.chunk_id for p in passages[:5]} & relevant) / len(relevant)
     reranked_recall = len(set(ranked_ids[:5]) & relevant) / len(relevant)

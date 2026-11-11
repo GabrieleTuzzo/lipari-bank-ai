@@ -3,11 +3,14 @@ import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    JSON,
     CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -15,8 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from pgvector.sqlalchemy import Vector
-from sqlalchemy import JSON, Index, Integer, String, Text
+
 from src.db.session import Base
 
 
@@ -130,10 +132,22 @@ class Card(Base):
 
     account: Mapped["Account"] = relationship(back_populates="cards")
 
+class AppUser(Base):
+    __tablename__ = "app_users"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=gen_uuid)
+    username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    full_name: Mapped[str] = mapped_column(String(128))
+    password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(32), default="operator")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+
+
 class DocumentChunk(Base):
     __tablename__ = "document_chunks"
     __table_args__ = (
-        # dichiarato anche nel modello: altrimenti la prossima --autogenerate lo cancella
         Index(
             "ix_document_chunks_embedding",
             "embedding",
@@ -148,3 +162,6 @@ class DocumentChunk(Base):
     content: Mapped[str] = mapped_column(Text)
     embedding: Mapped[list[float]] = mapped_column(Vector(1536))
     chunk_metadata: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
+    visibility: Mapped[str] = mapped_column(
+        String(32), default="public", server_default="public", index=True
+    )

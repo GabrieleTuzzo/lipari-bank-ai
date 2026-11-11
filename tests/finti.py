@@ -1,11 +1,28 @@
 import hashlib
 import json
-import re
 import math
+import re
+from collections.abc import AsyncIterator, Callable
+from decimal import Decimal
 
-import httpx2
-from src.llm.types import LLMResponse, Message, ToolSpec
+import httpx
+from openai import AsyncOpenAI
+
+from src.auth.deps import UserContext
 from src.llm.embedding_client import EmbeddingClient
+from src.llm.rewriter import QueryRewriter
+from src.llm.types import LLMResponse, Message, ToolSpec
+from src.types.categorize import CategorizeRequest, CategorizeResponse
+
+
+def openai_finto(
+    handler: Callable[[httpx.Request], httpx.Response], max_retries: int = 1
+) -> AsyncOpenAI:
+    return AsyncOpenAI(
+        api_key="test",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        max_retries=max_retries,
+    )
 
 # tests/finti.py — in fondo: gli embedding finti, e un modello che risponde come gli si dice
 def vettore(testo: str) -> list[float]:
@@ -17,10 +34,10 @@ def vettore(testo: str) -> list[float]:
     return [x / norma for x in v]
 
 
-def gestore_embedding(r: httpx2.Request) -> httpx2.Response:
+def gestore_embedding(r: httpx.Request) -> httpx.Response:
     """L'API degli embedding, finta: un vettore per ogni testo, nell'ordine in cui arrivano."""
     testi: list[str] = json.loads(r.content)["input"]
-    return httpx2.Response(
+    return httpx.Response(
         200,
         json={
             "object": "list",
@@ -36,6 +53,50 @@ def gestore_embedding(r: httpx2.Request) -> httpx2.Response:
 
 def embedder_finto() -> EmbeddingClient:
     return EmbeddingClient(openai_finto(gestore_embedding), "text-embedding-3-small")
+
+
+class ModelloEco:
+    async def complete(
+        self, messages: list[Message], max_tokens: int = 500, tools: list[ToolSpec] | None = None
+    ) -> LLMResponse:
+        content = f"Echo: {messages[-1].content}"
+        return LLMResponse(
+            content=content, tokens_used=2, cost_eur=Decimal("0"), model="finto"
+        )
+
+    async def stream(
+        self, messages: list[Message], max_tokens: int = 500
+    ) -> AsyncIterator[str | LLMResponse]:
+        response = await self.complete(messages, max_tokens)
+        yield response.content
+        yield response
+
+
+class CategorizzazioneARegole:
+    async def categorize(self, req: CategorizeRequest) -> CategorizeResponse:
+        description = req.description.casefold()
+        has_utility = bool(re.search(r"\b(enel|energia)\b", description))
+        has_entertainment = bool(re.search(r"\b(netflix|spotify)\b", description))
+        if has_utility and has_entertainment:
+            return CategorizeResponse(
+                category="UTILITIES",
+                subcategory="ENERGY",
+                confidence=0.5,
+                reasoning="Il movimento combina più categorie, inclusa un'altra categoria.",
+            )
+        if has_utility:
+            return CategorizeResponse(
+                category="UTILITIES",
+                subcategory="ENERGY",
+                confidence=0.8,
+                reasoning="Pagamento di una bolletta energetica.",
+            )
+        return CategorizeResponse(
+            category="OTHER",
+            subcategory="GENERAL",
+            confidence=0.5,
+            reasoning="Non è possibile ricondurre il movimento a una categoria specifica.",
+        )
 
 
 class ModelloFisso:
@@ -57,3 +118,11 @@ class ModelloFisso:
         self, messages: list[Message], max_tokens: int = 500
     ) -> AsyncIterator[str | LLMResponse]:
         yield await self.complete(messages, max_tokens)
+
+
+MARCO = UserContext(username="mbianchi", role="operator")
+GIULIA = UserContext(username="grossi", role="compliance_lead")
+
+
+def riscrittore_spento() -> QueryRewriter:
+    return QueryRewriter(ModelloEco(), "", enabled=False)

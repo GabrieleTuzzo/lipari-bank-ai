@@ -3,11 +3,12 @@ from collections.abc import AsyncIterator, Iterator
 from decimal import Decimal
 from pathlib import Path
 
-import httpx2
+import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select, text
 
+from src.auth.deps import get_current_user
 from src.config import settings
 from src.db.models import DocumentChunk
 from src.db.session import AsyncSessionLocal, engine
@@ -18,8 +19,16 @@ from src.main import app
 from src.services.ingest_service import IngestService
 from src.services.rag_service import RIFIUTO, RAGService, citazioni
 from src.services.retrieval_service import RetrievalResult, RetrievalService
-from src.types.advice import AdviceRequest, AdviceResponse
-from tests.finti import ModelloFisso, embedder_finto, openai_finto, vettore
+from src.types.advice import AdviceResponse
+from tests.finti import (
+    GIULIA,
+    MARCO,
+    ModelloFisso,
+    embedder_finto,
+    openai_finto,
+    riscrittore_spento,
+    vettore,
+)
 
 COMMISSIONI = Path("data/docs/commissioni_bonifico.md").read_text(encoding="utf-8")
 
@@ -57,8 +66,10 @@ async def conta(document_id: str) -> int:
 
 async def chiedi(modello: ModelloFisso, domanda: str) -> AdviceResponse:
     async with AsyncSessionLocal() as s:
-        servizio = RAGService(RetrievalService(s), embedder_finto(), modello, "PROMPT")
-        return await servizio.advise(AdviceRequest(question=domanda))
+        servizio = RAGService(
+            RetrievalService(s), embedder_finto(), modello, riscrittore_spento(), "PROMPT"
+        )
+        return await servizio.advise(domanda, MARCO)
 
 
 # ---------------------------------------------------------------- il taglio
@@ -145,6 +156,7 @@ async def test_la_soglia_filtra_i_passaggi_lontani():
 async def test_gli_endpoint_ingeriscono_e_rispondono(monkeypatch: pytest.MonkeyPatch):
     modello = ModelloFisso("Online il bonifico SEPA costa €1.00 [fonte-1].")
     app.dependency_overrides[get_llm_provider] = lambda: modello  # l'embedder è quello finto
+    app.dependency_overrides[get_current_user] = lambda: GIULIA
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         r = await c.post(
             "/api/ai/documents/ingest",
@@ -162,7 +174,7 @@ async def test_gli_endpoint_ingeriscono_e_rispondono(monkeypatch: pytest.MonkeyP
     assert a.json()["cost_eur"] == 0.0001
     # un guasto degli embedding è un guasto del fornitore, come nella chat: il 502
     giu = EmbeddingClient(
-        openai_finto(lambda r: httpx2.Response(503, json={"error": {"message": "giù"}}), 0),
+        openai_finto(lambda r: httpx.Response(503, json={"error": {"message": "giù"}}), 0),
         "text-embedding-3-small",
     )
     app.dependency_overrides[get_embedder] = lambda: giu

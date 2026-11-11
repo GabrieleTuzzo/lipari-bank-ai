@@ -4,7 +4,7 @@ import sys
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import Field, ValidationError
+from pydantic import AliasChoices, Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsError
 
 
@@ -37,7 +37,11 @@ class Settings(BaseSettings):
     default_model: str = "gpt-4o-mini"
     embedding_model: str = "text-embedding-3-small"
     max_tokens_per_request: int = 2000
-    daily_cost_limit_eur: Decimal = Field(default=Decimal("10.00"), gt=0)
+    daily_budget_eur: Decimal = Field(
+        default=Decimal("10.00"),
+        gt=0,
+        validation_alias=AliasChoices("DAILY_BUDGET_EUR", "DAILY_COST_LIMIT_EUR"),
+    )
 
 
 def spiega(errore: ValidationError) -> str:

@@ -27,7 +27,11 @@ class IngestService:
         self.embedder = embedder
 
     async def ingest(
-        self, document_id: str, text: str, metadata: dict[str, str] | None = None
+        self,
+        document_id: str,
+        text: str,
+        metadata: dict[str, str] | None = None,
+        visibility: str = "public",
     ) -> int:
         """Taglia, vettorizza e salva. Ritorna quanti passaggi sono stati scritti.
 
@@ -54,6 +58,7 @@ class IngestService:
                         content=testo,
                         embedding=vettore,
                         chunk_metadata=metadata or {},
+                        visibility=visibility,
                     )
                     for i, (testo, vettore) in enumerate(zip(lotto, vettori, strict=True))
                 ]

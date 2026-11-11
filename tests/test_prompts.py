@@ -4,7 +4,8 @@ from src.llm.prompt import load_prompt
 
 
 @pytest.mark.parametrize(
-    "name", ["chat_system_v1", "categorize_system_v1", "advice_system_v1"]
+    "name",
+    ["chat_system_v1", "categorize_system_v1", "advice_system_v1", "rewrite_system_v1"],
 )
 def test_load_prompt_returns_existing_prompt(name: str) -> None:
     assert load_prompt(name)

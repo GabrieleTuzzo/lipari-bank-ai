@@ -27,11 +27,26 @@ Per eseguire i test:
 uv run pytest
 ```
 
+## Autenticazione e documenti riservati
+
+Le API di chat, conti e advisor richiedono un bearer token ottenuto da
+`POST /api/auth/login`; l'ingestione è riservata ai ruoli `compliance_lead` e `admin`.
+Prima di usare questi endpoint, applica le migration e crea gli utenti di sviluppo:
+
+```powershell
+uv run alembic upgrade head
+uv run python -m scripts.seed_users
+```
+
+I documenti possono avere visibilità `public`, `internal`, `risk_only` o
+`compliance_only`. Il livello viene assegnato durante l'ingestione e il filtro per ruolo
+viene applicato direttamente nella query di recupero.
+
 ## Ricerca documentale
 
 L'endpoint `POST /api/ai/advice` recupera fino a 20 passaggi, li riordina con il modello
 configurato e usa al massimo i primi 5 per generare la risposta. La risposta include
-`retrieved_chunks`, `rerank_tokens_used`, `rerank_cost_eur` e `rerank_latency_ms`;
+`rewritten_query`, `retrieved_chunks`, `rerank_tokens_used`, `rerank_cost_eur` e `rerank_latency_ms`;
 `tokens_used` e `cost_eur` comprendono sia il riordino sia la generazione. Se c'è un solo
 passaggio, il riordino viene saltato.
 

@@ -16,13 +16,23 @@ def modelli_finti() -> Iterator[None]:
     in un modo diverso. La chat parla con un finto che ripete la domanda, la categorizzazione
     usa la regola del Giorno 2, gli embedding sono finti ma coerenti (dal Giorno 5). Un test che
     vuole un modello preciso mette il suo."""
+    from src.api.advice import get_rewriter
     from src.api.categorize import get_categorize_service
+    from src.auth.deps import get_current_user
     from src.llm.factory import get_embedder, get_llm_provider
     from src.main import app
-    from tests.finti import CategorizzazioneARegole, ModelloEco, embedder_finto
+    from tests.finti import (
+        MARCO,
+        CategorizzazioneARegole,
+        ModelloEco,
+        embedder_finto,
+        riscrittore_spento,
+    )
 
     app.dependency_overrides[get_llm_provider] = ModelloEco
     app.dependency_overrides[get_categorize_service] = CategorizzazioneARegole
     app.dependency_overrides[get_embedder] = embedder_finto
+    app.dependency_overrides[get_rewriter] = riscrittore_spento
+    app.dependency_overrides[get_current_user] = lambda: MARCO
     yield
     app.dependency_overrides.clear()

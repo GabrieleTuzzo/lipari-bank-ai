@@ -3,6 +3,8 @@ from pydantic import BaseModel
 from sqlalchemy import text as sql
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.auth.acl import visible_to
+
 SOGLIA_PREDEFINITA = 0.35  # da tarare sui propri documenti: non è un numero universale
 
 
@@ -26,6 +28,17 @@ class RetrievalService:
         LIMIT :k
         """
     )
+    SQL_PER_RUOLO = sql(
+        """
+        SELECT id, document_id, content,
+               1 - (embedding <=> CAST(:q AS vector)) AS similarity
+        FROM document_chunks
+        WHERE 1 - (embedding <=> CAST(:q AS vector)) >= :soglia
+          AND visibility = ANY(:livelli)
+        ORDER BY embedding <=> CAST(:q AS vector)
+        LIMIT :k
+        """
+    )
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -44,6 +57,33 @@ class RetrievalService:
         """
         righe = await self.session.execute(
             self.SQL, {"q": str(query_vec), "k": top_k, "soglia": soglia}
+        )
+        return [
+            RetrievalResult(
+                chunk_id=str(r.id),
+                document_id=r.document_id,
+                content=r.content,
+                similarity=float(r.similarity),
+            )
+            for r in righe
+        ]
+
+    async def search_for_user(
+        self,
+        query_vec: list[float],
+        role: str,
+        top_k: int = 5,
+        soglia: float = SOGLIA_PREDEFINITA,
+    ) -> list[RetrievalResult]:
+        """Search only among chunks visible to the requesting role."""
+        righe = await self.session.execute(
+            self.SQL_PER_RUOLO,
+            {
+                "q": str(query_vec),
+                "k": top_k,
+                "soglia": soglia,
+                "livelli": visible_to(role),
+            },
         )
         return [
             RetrievalResult(

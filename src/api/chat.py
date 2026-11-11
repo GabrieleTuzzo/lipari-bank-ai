@@ -1,14 +1,13 @@
 # src/api/chat.py — la chat, con il modello, intera o in streaming
-import asyncio
 import json
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.types import Receive, Scope, Send
 
+from src.auth.deps import UserContext, get_current_user
 from src.config import settings
 from src.db.session import get_db
 from src.llm.client import LLMProvider
@@ -20,7 +19,6 @@ from src.types.chat import ChatRequest, ChatResponse
 router = APIRouter(prefix="/api/ai", tags=["Chat"])
 
 SYSTEM_PROMPT = load_prompt("chat_system_v1")
-OPERATORE = "mbianchi"  # finto fino al Giorno 6: l'operatore del seed. Poi arriva dal token
 
 
 def get_chat_service(
@@ -30,74 +28,29 @@ def get_chat_service(
     return ChatService(session, llm, SYSTEM_PROMPT, settings.daily_budget_eur)
 
 
-class PersistedStreamingResponse(StreamingResponse):
-    def __init__(self, content: AsyncGenerator[str, None]) -> None:
-        self._content = content
-        super().__init__(content, media_type="text/event-stream")
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        try:
-            await super().__call__(scope, receive, send)
-        finally:
-            await self._content.aclose()
-
-
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
-    req: ChatRequest, service: Annotated[ChatService, Depends(get_chat_service)]
+    req: ChatRequest,
+    user: Annotated[UserContext, Depends(get_current_user)],
+    service: Annotated[ChatService, Depends(get_chat_service)],
 ) -> ChatResponse:
-    return await service.chat(req, user_id=OPERATORE)
+    return await service.chat(req, user_id=user.username)  # da oggi, l'utente del token
 
 
 @router.post("/chat/stream")
 async def chat_stream(
     req: ChatRequest,
-    request: Request,
+    user: Annotated[UserContext, Depends(get_current_user)],
     service: Annotated[ChatService, Depends(get_chat_service)],
 ) -> StreamingResponse:
-    pezzi = await service.chat_stream(req, user_id=OPERATORE)  # un 404 esce qui, prima dello stream
+    pezzi = await service.chat_stream(
+        req, user_id=user.username
+    )  # un 404 esce qui, prima dello stream
 
-    async def eventi() -> AsyncGenerator[str, None]:
-        coda: asyncio.Queue[str | Exception | None] = asyncio.Queue()
-
-        async def consuma_stream() -> None:
-            try:
-                async for pezzo in pezzi:
-                    await coda.put(pezzo)
-            except Exception as exc:
-                await coda.put(exc)
-            finally:
-                await coda.put(None)
-
-        produttore = asyncio.create_task(consuma_stream())
-        try:
-            while True:
-                try:
-                    pezzo = await asyncio.wait_for(coda.get(), timeout=0.1)
-                except TimeoutError:
-                    if await request.is_disconnected():
-                        await asyncio.shield(produttore)
-                        return
-                    continue
-                if pezzo is None:
-                    break
-                if isinstance(pezzo, Exception):
-                    raise pezzo
-                # Ogni evento è JSON: un a capo dentro il testo non rompe il formato.
-                yield f"data: {json.dumps({'text': pezzo}, ensure_ascii=False)}\n\n"
-                if await request.is_disconnected():
-                    # Non interrompere il provider: la risposta finale contiene il costo reale.
-                    await asyncio.shield(produttore)
-                    return
-            await produttore
-        except asyncio.CancelledError:
-            # Starlette può cancellare lo stream appena rileva il disconnect; il produttore
-            # indipendente finisce comunque la risposta e il salvataggio prima della chiusura DB.
-            await asyncio.shield(produttore)
-            raise
-        finally:
-            if not produttore.done():
-                await asyncio.shield(produttore)
+    async def eventi() -> AsyncIterator[str]:
+        async for pezzo in pezzi:
+            # ogni evento è JSON: un a capo dentro il testo non rompe il formato
+            yield f"data: {json.dumps({'text': pezzo}, ensure_ascii=False)}\n\n"
         yield "data: [DONE]\n\n"
 
-    return PersistedStreamingResponse(eventi())
+    return StreamingResponse(eventi(), media_type="text/event-stream")
