@@ -53,7 +53,7 @@ def citazioni(risposta: str, passaggi: list[RetrievalResult]) -> list[Citation]:
 class RAGService:
     """Recupera, riordina e genera risposte limitate ai documenti visibili all'utente."""
 
-    TIMEOUT_GENERAZIONE_S = 20.0
+    TIMEOUT_FASE_S = 2.0
 
     def __init__(
         self,
@@ -73,24 +73,89 @@ class RAGService:
     async def advise(self, question: str, user: UserContext) -> AdviceResponse:
         """Cerca con la query riscritta, ma genera sempre sulla domanda originale."""
         phases: dict[str, float] = {}
+        avvisi: list[str] = []
+        used_fallback = False
+
         started = perf_counter()
-        rewritten_query = await self.rewriter.rewrite_cached(question)
+        try:
+            async with asyncio.timeout(self.TIMEOUT_FASE_S):
+                rewritten_query = await self.rewriter.rewrite_cached(question)
+        except TimeoutError:
+            rewritten_query = question
+            avvisi.append(
+                f"⚠️ Riscrittura non completata entro {self.TIMEOUT_FASE_S:g} s; "
+                "uso la domanda originale."
+            )
+            logger.warning("advice_rewrite_timeout", extra={"role": user.role})
+            used_fallback = True
         phases["rewrite_ms"] = (perf_counter() - started) * 1000
 
         started = perf_counter()
-        vector = await self.embedder.embed_one(rewritten_query)
+        try:
+            async with asyncio.timeout(self.TIMEOUT_FASE_S):
+                vector = await self.embedder.embed_one(rewritten_query)
+        except TimeoutError:
+            phases["embedding_ms"] = (perf_counter() - started) * 1000
+            avvisi.append(
+                f"⚠️ Creazione dell'embedding non completata entro {self.TIMEOUT_FASE_S:g} s."
+            )
+            logger.warning("advice_embedding_timeout", extra={"role": user.role, **phases})
+            answer = "\n".join(
+                [
+                    *avvisi,
+                    "Risposta non disponibile: non è stato possibile cercare nei documenti.",
+                ]
+            )
+            logger.info(
+                "advice_completata",
+                extra={"used_fallback": True, "role": user.role, **phases},
+            )
+            return AdviceResponse(
+                answer=answer,
+                citations=[],
+                rewritten_query=rewritten_query,
+                tokens_used=0,
+                cost_eur=0.0,
+                retrieved_chunks=0,
+            )
         phases["embedding_ms"] = (perf_counter() - started) * 1000
 
         started = perf_counter()
-        candidates = await self.retrieval.search_for_user(vector, user.role, top_k=20)
+        try:
+            async with asyncio.timeout(self.TIMEOUT_FASE_S):
+                candidates = await self.retrieval.search_for_user(vector, user.role, top_k=20)
+        except TimeoutError:
+            phases["retrieval_ms"] = (perf_counter() - started) * 1000
+            avvisi.append(
+                f"⚠️ Ricerca nei documenti non completata entro {self.TIMEOUT_FASE_S:g} s."
+            )
+            logger.warning("advice_retrieval_timeout", extra={"role": user.role, **phases})
+            answer = "\n".join(
+                [
+                    *avvisi,
+                    "Risposta non disponibile: non è stato possibile recuperare i documenti.",
+                ]
+            )
+            logger.info(
+                "advice_completata",
+                extra={"used_fallback": True, "role": user.role, **phases},
+            )
+            return AdviceResponse(
+                answer=answer,
+                citations=[],
+                rewritten_query=rewritten_query,
+                tokens_used=0,
+                cost_eur=0.0,
+                retrieved_chunks=0,
+            )
         phases["retrieval_ms"] = (perf_counter() - started) * 1000
         if not candidates:
             logger.info(
                 "advice_completata",
-                extra={"used_fallback": False, "role": user.role, **phases},
+                extra={"used_fallback": used_fallback, "role": user.role, **phases},
             )
             return AdviceResponse(
-                answer=RIFIUTO,
+                answer="\n".join([*avvisi, RIFIUTO]),
                 citations=[],
                 rewritten_query=rewritten_query,
                 tokens_used=0,
@@ -98,21 +163,26 @@ class RAGService:
                 retrieved_chunks=0,
             )
 
-        used_fallback = False
         started = perf_counter()
         try:
-            ranked = await self.reranking.rerank(rewritten_query, candidates, top_k=5)
+            async with asyncio.timeout(self.TIMEOUT_FASE_S):
+                ranked = await self.reranking.rerank(rewritten_query, candidates, top_k=5)
             passages = ranked.passages
             rerank_tokens = ranked.tokens_used
             rerank_cost = ranked.cost_eur
             rerank_latency = ranked.latency_ms
-        except (LLMProviderError, RerankingError, TimeoutError):
+        except (LLMProviderError, RerankingError, TimeoutError) as exc:
             logger.warning("advice_reranking_fallback", extra={"role": user.role})
             passages = candidates[:5]
             rerank_tokens = 0
             rerank_cost = 0.0
             rerank_latency = 0.0
             used_fallback = True
+            if isinstance(exc, TimeoutError):
+                avvisi.append(
+                    f"⚠️ Riordino dei documenti non completato entro "
+                    f"{self.TIMEOUT_FASE_S:g} s; uso l'ordine di ricerca."
+                )
         phases["rerank_ms"] = (perf_counter() - started) * 1000
 
         started = perf_counter()
@@ -120,26 +190,27 @@ class RAGService:
             Message(role="system", content=self.prompt),
             Message(
                 role="user",
-                content=(
-                    f"CONTESTO\n{contesto(passages)}\n\nDOMANDA\n{question}"
-                ),
+                content=(f"CONTESTO\n{contesto(passages)}\n\nDOMANDA\n{question}"),
             ),
         ]
         phases["prompt_ms"] = (perf_counter() - started) * 1000
         started = perf_counter()
         try:
-            response = await asyncio.wait_for(
-                self.llm.complete(messages),
-                timeout=self.TIMEOUT_GENERAZIONE_S,
-            )
-        except (LLMProviderError, TimeoutError):
+            async with asyncio.timeout(self.TIMEOUT_FASE_S):
+                response = await self.llm.complete(messages)
+        except (LLMProviderError, TimeoutError) as exc:
             phases["generation_ms"] = (perf_counter() - started) * 1000
             logger.warning("advice_generation_fallback", extra={"role": user.role})
             used_fallback = True
-            answer = (
-                "⚠️ Risposta parziale: il modello non è disponibile. "
-                "Ecco i passaggi recuperati:\n\n"
-                f"{contesto(passages)}"
+            if isinstance(exc, TimeoutError):
+                avvisi.append(f"⚠️ Generazione non completata entro {self.TIMEOUT_FASE_S:g} s.")
+            answer = "\n".join(
+                [
+                    *avvisi,
+                    "Risposta parziale: il modello non è disponibile. "
+                    "Ecco i passaggi recuperati:\n\n"
+                    f"{contesto(passages)}",
+                ]
             )
             citations = citazioni(answer, passages)
             logger.info(
@@ -164,8 +235,9 @@ class RAGService:
             "advice_completata",
             extra={"used_fallback": used_fallback, "role": user.role, **phases},
         )
+        answer = "\n".join([*avvisi, response.content])
         return AdviceResponse(
-            answer=response.content,
+            answer=answer,
             citations=[] if refused else citazioni(response.content, passages),
             rewritten_query=rewritten_query,
             tokens_used=response.tokens_used + rerank_tokens,
