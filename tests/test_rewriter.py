@@ -8,10 +8,12 @@ from pydantic import ValidationError
 from src.auth.acl import visible_to
 from src.auth.deps import UserContext
 from src.exceptions import LLMProviderError
+from src.llm.client import LLMProvider
+from src.llm.embedding_client import EmbeddingClient
 from src.llm.rewriter import QueryRewriter
 from src.llm.types import LLMResponse, Message, ToolSpec
 from src.services.rag_service import RAGService
-from src.services.retrieval_service import RetrievalResult
+from src.services.retrieval_service import RetrievalResult, RetrievalService
 from src.types.advice import IngestRequest
 
 
@@ -40,7 +42,7 @@ class ModelloCheRiscrive:
         yield await self.complete(messages, max_tokens)
 
 
-class EmbedderDiTest:
+class EmbedderDiTest(EmbeddingClient):
     def __init__(self) -> None:
         self.queries: list[str] = []
 
@@ -49,12 +51,12 @@ class EmbedderDiTest:
         return [0.0]
 
 
-class RetrievalDiTest:
+class RetrievalDiTest(RetrievalService):
     def __init__(self) -> None:
         self.roles: list[str] = []
 
     async def search_for_user(
-        self, query_vec: list[float], role: str, top_k: int = 5
+        self, query_vec: list[float], role: str, top_k: int = 5, soglia: float = 0.35
     ) -> list[RetrievalResult]:
         self.roles.append(role)
         return [
@@ -67,7 +69,7 @@ class RetrievalDiTest:
         ]
 
 
-class ModelloDiRisposta:
+class ModelloDiRisposta(LLMProvider):
     def __init__(self) -> None:
         self.messages: list[Message] = []
 
@@ -82,13 +84,23 @@ class ModelloDiRisposta:
             model="test",
         )
 
+    async def stream(
+        self, messages: list[Message], max_tokens: int = 500
+    ) -> AsyncIterator[str | LLMResponse]:
+        yield await self.complete(messages, max_tokens)
 
-class ModelloLento:
+
+class ModelloLento(LLMProvider):
     async def complete(
         self, messages: list[Message], max_tokens: int = 500, tools: list[ToolSpec] | None = None
     ) -> LLMResponse:
         await asyncio.sleep(10)
         return LLMResponse(content="", tokens_used=0, cost_eur=Decimal("0"), model="test")
+
+    async def stream(
+        self, messages: list[Message], max_tokens: int = 500
+    ) -> AsyncIterator[str | LLMResponse]:
+        yield await self.complete(messages, max_tokens)
 
 
 class ModelloLentoAlPrimoGiro(ModelloDiRisposta):
@@ -105,15 +117,15 @@ class ModelloLentoAlPrimoGiro(ModelloDiRisposta):
         return await super().complete(messages, max_tokens, tools)
 
 
-class EmbedderLento:
+class EmbedderLento(EmbedderDiTest):
     async def embed_one(self, text: str) -> list[float]:
         await asyncio.sleep(10)
         return [0.0]
 
 
-class RetrievalLento:
+class RetrievalLento(RetrievalDiTest):
     async def search_for_user(
-        self, query_vec: list[float], role: str, top_k: int = 5
+        self, query_vec: list[float], role: str, top_k: int = 5, soglia: float = 0.35
     ) -> list[RetrievalResult]:
         await asyncio.sleep(10)
         return []
@@ -121,7 +133,7 @@ class RetrievalLento:
 
 class RetrievalConDueRisultati(RetrievalDiTest):
     async def search_for_user(
-        self, query_vec: list[float], role: str, top_k: int = 5
+        self, query_vec: list[float], role: str, top_k: int = 5, soglia: float = 0.35
     ) -> list[RetrievalResult]:
         return [
             RetrievalResult(

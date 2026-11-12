@@ -67,7 +67,7 @@ class ChatRepository:
         )
         return Decimal(str(speso)) if speso is not None else Decimal("0")
 
-
+# src/db/repos.py — estratto: i tre metodi che i tool usano, dal Giorno 3
 class AccountRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -119,11 +119,11 @@ class MovementRepository:
     async def with_owner(
         self, username: str, account_id: str, dal: date, al: date
     ) -> list[tuple[Movement, str]]:
-        """I movimenti di un conto in un periodo, ognuno con il nome dell'intestatario."""
+        """I movimenti di un conto nel periodo, con il nome dell'intestatario."""
         stmt = (
             select(Movement, Customer.full_name)
-            .join(Account, Account.id == Movement.account_id)  # il movimento, al suo conto
-            .join(Customer, Customer.id == Account.customer_id)  # il conto, al suo cliente
+            .join(Account, Account.id == Movement.account_id)
+            .join(Customer, Customer.id == Account.customer_id)
             .where(
                 Account.id == account_id,
                 Customer.operator == username,
@@ -136,7 +136,7 @@ class MovementRepository:
     async def spent_by_month(
         self, username: str, account_id: str, dal: date, al: date
     ) -> list[tuple[str, Decimal]]:
-        """Quanto è uscito dal conto, mese per mese: la somma delle uscite, cambiata di segno."""
+        """La somma delle uscite del conto, raggruppata per mese."""
         mese = func.to_char(Movement.booking_date, "YYYY-MM")
         stmt = (
             select(mese, func.sum(-Movement.amount))
@@ -146,7 +146,7 @@ class MovementRepository:
                 Account.id == account_id,
                 Customer.operator == username,
                 Movement.booking_date.between(dal, al),
-                Movement.amount < 0,  # solo le uscite: gli accrediti non sono spesa
+                Movement.amount < 0,
             )
             .group_by(mese)
             .order_by(mese)

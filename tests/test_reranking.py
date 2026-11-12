@@ -50,7 +50,7 @@ class RecuperoDiTest(RetrievalService):
         self.top_k: int | None = None
 
     async def search_for_user(
-        self, query_vec: list[float], role: str, top_k: int = 5
+        self, query_vec: list[float], role: str, top_k: int = 5, soglia: float = 0.35
     ) -> list[RetrievalResult]:
         self.top_k = top_k
         return self.passages[:top_k]

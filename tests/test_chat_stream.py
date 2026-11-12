@@ -1,12 +1,16 @@
 from collections.abc import AsyncIterator
 from decimal import Decimal
-from types import SimpleNamespace
+from typing import cast
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import ClientDisconnect
 
 from src.api.chat import chat_stream
-from src.llm.types import LLMResponse, Message
+from src.db.models import ChatSession
+from src.db.repos import ChatRepository
+from src.llm.client import LLMProvider
+from src.llm.types import LLMResponse, Message, ToolSpec
 from src.services.chat_service import ChatService
 from src.types.chat import ChatRequest
 
@@ -27,7 +31,14 @@ class SessionFinta:
 
 
 class LLMFinto:
-    async def stream(self, _messages: list[Message]) -> AsyncIterator[str | LLMResponse]:
+    async def complete(
+        self, messages: list[Message], max_tokens: int = 500, tools: list[ToolSpec] | None = None
+    ) -> LLMResponse:
+        raise AssertionError("complete non viene usato in questo test")
+
+    async def stream(
+        self, messages: list[Message], max_tokens: int = 500
+    ) -> AsyncIterator[str | LLMResponse]:
         yield "Risposta "
         yield "completa"
         yield LLMResponse(
@@ -45,7 +56,9 @@ class ServiceFinto:
     async def chat_stream(self, _req: ChatRequest, user_id: str) -> AsyncIterator[str]:
         assert user_id == "mbianchi"
         return self.service._pezzi(
-            SimpleNamespace(id="sessione"), "domanda", [Message(role="user", content="domanda")]
+            ChatSession(id="sessione", user_id="mbianchi"),
+            "domanda",
+            [Message(role="user", content="domanda")],
         )
 
 
@@ -53,9 +66,9 @@ async def test_disconnect_smette_di_inviare_ma_salva_risposta_e_costo() -> None:
     session = SessionFinta()
     repo = RepoFinto()
     service = object.__new__(ChatService)
-    service.session = session
-    service.repo = repo
-    service.llm = LLMFinto()
+    service.session = cast(AsyncSession, session)
+    service.repo = cast(ChatRepository, repo)
+    service.llm = cast(LLMProvider, LLMFinto())
 
     class RequestFinta:
         async def is_disconnected(self) -> bool:
@@ -81,9 +94,9 @@ async def test_chiusura_dello_stream_attende_il_salvataggio() -> None:
     session = SessionFinta()
     repo = RepoFinto()
     service = object.__new__(ChatService)
-    service.session = session
-    service.repo = repo
-    service.llm = LLMFinto()
+    service.session = cast(AsyncSession, session)
+    service.repo = cast(ChatRepository, repo)
+    service.llm = cast(LLMProvider, LLMFinto())
 
     class RequestConnessa:
         async def is_disconnected(self) -> bool:
@@ -111,6 +124,8 @@ async def test_chiusura_dello_stream_attende_il_salvataggio() -> None:
             send,  # type: ignore[arg-type]
         )
 
-    assert b'"text": "Risposta "' in messaggi_inviati[1]["body"]
+    body = messaggi_inviati[1]["body"]
+    assert isinstance(body, bytes)
+    assert b'"text": "Risposta "' in body
     assert session.committed
     assert repo.messages[1][1]["cost_eur"] == Decimal("0.00125")

@@ -21,7 +21,9 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "aiosqlite>=0.22.1",
     "httpx>=0.28.1",
+    "httpx2>=2.16.0",
     "mypy>=2.4.0",
     "pytest>=9.2.0",
     "pytest-asyncio>=1.4.1",
@@ -57,3 +59,11 @@ warn_unused_ignores = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+# Una funzione di test non restituisce niente e riceve fixture: annotarla è rumore, ed è la
+# stessa regola che ruff applica ai test qui sopra. Il corpo si controlla comunque.
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true

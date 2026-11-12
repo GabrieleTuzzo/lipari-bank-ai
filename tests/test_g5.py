@@ -3,7 +3,7 @@ from collections.abc import AsyncIterator, Iterator
 from decimal import Decimal
 from pathlib import Path
 
-import httpx
+import httpx2
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select, text
@@ -174,7 +174,7 @@ async def test_gli_endpoint_ingeriscono_e_rispondono(monkeypatch: pytest.MonkeyP
     assert a.json()["cost_eur"] == 0.0001
     # un guasto degli embedding è un guasto del fornitore, come nella chat: il 502
     giu = EmbeddingClient(
-        openai_finto(lambda r: httpx.Response(503, json={"error": {"message": "giù"}}), 0),
+        openai_finto(lambda r: httpx2.Response(503, json={"error": {"message": "giù"}}), 0),
         "text-embedding-3-small",
     )
     app.dependency_overrides[get_embedder] = lambda: giu

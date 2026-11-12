@@ -5,7 +5,7 @@ import re
 from collections.abc import AsyncIterator, Callable
 from decimal import Decimal
 
-import httpx
+import httpx2
 from openai import AsyncOpenAI
 
 from src.auth.deps import UserContext
@@ -16,11 +16,11 @@ from src.types.categorize import CategorizeRequest, CategorizeResponse
 
 
 def openai_finto(
-    handler: Callable[[httpx.Request], httpx.Response], max_retries: int = 1
+    handler: Callable[[httpx2.Request], httpx2.Response], max_retries: int = 1
 ) -> AsyncOpenAI:
     return AsyncOpenAI(
         api_key="test",
-        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
         max_retries=max_retries,
     )
 
@@ -34,10 +34,10 @@ def vettore(testo: str) -> list[float]:
     return [x / norma for x in v]
 
 
-def gestore_embedding(r: httpx.Request) -> httpx.Response:
+def gestore_embedding(r: httpx2.Request) -> httpx2.Response:
     """L'API degli embedding, finta: un vettore per ogni testo, nell'ordine in cui arrivano."""
     testi: list[str] = json.loads(r.content)["input"]
-    return httpx.Response(
+    return httpx2.Response(
         200,
         json={
             "object": "list",
