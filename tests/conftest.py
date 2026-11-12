@@ -11,8 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from src.agents.deps import Deps
 from src.auth.deps import UserContext
-from src.db.models import Account, Customer, Movement
-from src.db.repos import AccountRepository, MovementRepository
+from src.db.models import Account, Card, Customer, Movement
+from src.db.repos import AccountRepository, CardRepository, MovementRepository
 from src.db.session import Base
 from src.services.alerts import AlertService
 from src.services.retrieval_service import RetrievalService
@@ -22,7 +22,7 @@ CLIENTE_DI_MARCO = "C-10234"           # nel portafoglio di mbianchi
 CLIENTE_ALTRUI = "C-20417"             # nel portafoglio di un collega, pgalli
 CONTO_DI_MARCO = "IT60X0542811101000000123"
 CONTO_ALTRUI = "IT60X0542811101000000789"
-TABELLE_DEL_GIORNO = ["customers", "accounts", "movements", "compliance_alerts"]
+TABELLE_DEL_GIORNO = ["customers", "accounts", "movements", "cards", "compliance_alerts"]
 
 
 def risposta(*, tool: str | None = None, argomenti: str = "{}", testo: str | None = None,
@@ -63,6 +63,7 @@ async def session() -> AsyncIterator[AsyncSession]:
                     balance=Decimal("15300.00")),
             Movement(account_id=CONTO_DI_MARCO, booking_date=date(2026, 9, 20),
                      description="Bonifico estero", amount=Decimal("-9800.00")),
+            Card(id="carta-marco", account_id=CONTO_DI_MARCO, plafond=Decimal("1250.00")),
         ])
         await s.commit()
         yield s
@@ -72,6 +73,7 @@ async def session() -> AsyncIterator[AsyncSession]:
 @pytest.fixture
 def deps_reali(session: AsyncSession) -> Deps:
     return Deps(accounts=AccountRepository(session), movements=MovementRepository(session),
+                cards=CardRepository(session),
                 alerts=AlertService(session), retrieval=RetrievalService(session),
                 embedder=embedder_finto(), openai=AsyncMock(), model="gpt-4o-mini")
 

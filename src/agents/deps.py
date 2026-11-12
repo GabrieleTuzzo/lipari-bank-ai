@@ -7,7 +7,7 @@ from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
-from src.db.repos import AccountRepository, MovementRepository
+from src.db.repos import AccountRepository, CardRepository, MovementRepository
 from src.db.session import get_db
 from src.llm.embedding_client import EmbeddingClient
 from src.llm.factory import get_embedder, get_openai
@@ -19,6 +19,7 @@ from src.services.retrieval_service import RetrievalService
 class Deps:
     accounts: AccountRepository
     movements: MovementRepository
+    cards: CardRepository
     alerts: AlertService
     retrieval: RetrievalService
     embedder: EmbeddingClient
@@ -30,6 +31,7 @@ async def get_deps(db: Annotated[AsyncSession, Depends(get_db)]) -> Deps:
     return Deps(
         accounts=AccountRepository(db),
         movements=MovementRepository(db),
+        cards=CardRepository(db),
         alerts=AlertService(db),
         retrieval=RetrievalService(db),
         embedder=get_embedder(),  # dalla factory del Giorno 4: un client per processo,

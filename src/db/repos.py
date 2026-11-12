@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.db.models import Account, ChatMessage, ChatSession, Customer, Movement
+from src.db.models import Account, Card, ChatMessage, ChatSession, Customer, Movement
 
 
 class ChatRepository:
@@ -116,6 +116,25 @@ class MovementRepository:
         )
         return list((await self.session.scalars(stmt)).all())
 
+    async def recorded_transfers(
+        self, username: str, account_id: str, descrizione: str, limite: int = 5
+    ) -> list[Movement]:
+        """Bonifici contabilizzati corrispondenti alla descrizione, solo nel portafoglio."""
+        stmt = (
+            select(Movement)
+            .join(Account, Account.id == Movement.account_id)
+            .join(Customer, Customer.id == Account.customer_id)
+            .where(
+                Account.id == account_id,
+                Customer.operator == username,
+                func.lower(Movement.description).contains(descrizione.lower(), autoescape=True),
+                func.lower(Movement.description).contains("bonific", autoescape=True),
+            )
+            .order_by(Movement.booking_date.desc(), Movement.id)
+            .limit(limite)
+        )
+        return list((await self.session.scalars(stmt)).all())
+
     async def with_owner(
         self, username: str, account_id: str, dal: date, al: date
     ) -> list[tuple[Movement, str]]:
@@ -132,6 +151,22 @@ class MovementRepository:
             .order_by(Movement.booking_date, Movement.id)
         )
         return list((await self.session.execute(stmt)).all())
+
+
+class CardRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def for_account(self, username: str, account_id: str) -> list[Card]:
+        """Le carte registrate su un conto del portafoglio dell'operatore."""
+        stmt = (
+            select(Card)
+            .join(Account, Account.id == Card.account_id)
+            .join(Customer, Customer.id == Account.customer_id)
+            .where(Account.id == account_id, Customer.operator == username)
+            .order_by(Card.id)
+        )
+        return list((await self.session.scalars(stmt)).all())
 
     async def spent_by_month(
         self, username: str, account_id: str, dal: date, al: date

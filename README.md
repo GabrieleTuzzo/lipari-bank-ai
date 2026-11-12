@@ -54,6 +54,16 @@ Per misurare il miglioramento del recupero serve confrontare top-5 e top-20 rior
 domande con passaggi rilevanti etichettati: i test sintetici verificano il flusso e il calcolo
 del costo, non stimano la qualità sul corpus reale.
 
+## Tool dell'agente
+
+L'agente di filiale espone sette tool: ricerca dei conti di un cliente, saldo, movimenti recenti,
+ricerca nei documenti, apertura di una segnalazione Compliance, disponibilità della carta e stato
+del bonifico. Le descrizioni distinguono i casi d'uso per aiutare il modello a scegliere:
+`check_card_availability` verifica la carta registrata e il plafond, non il residuo spendibile;
+`get_transfer_status` trova solo bonifici già contabilizzati nei movimenti, non quelli in attesa.
+Più tool non garantiscono una scelta migliore: le descrizioni delimitano esplicitamente cosa
+ciascun tool può verificare.
+
 ## Modello dati
 
 I beneficiari appartengono a un cliente; i mandati collegano un conto al beneficiario;

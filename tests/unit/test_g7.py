@@ -16,6 +16,8 @@ from src.agents.loop import run_agent
 from src.agents.registry import Tool, impronta
 from src.agents.tools import (
     NON_DISPONIBILE,
+    BonificoArgs,
+    CartaArgs,
     ClienteArgs,
     RicercaArgs,
     SaldoArgs,
@@ -61,6 +63,49 @@ async def test_saldo_di_un_conto_del_portafoglio(deps_reali: Deps, marco: UserCo
     esito = await _tool(build_tools_for(marco, deps_reali), "get_account_balance").run(
         SaldoArgs(account_id=CONTO_DI_MARCO))
     assert esito == f"Saldo di {CONTO_DI_MARCO}: 48200.00 EUR"
+
+
+async def test_disponibilita_carta_mostra_plafond_senza_inventare_il_residuo(
+    deps_reali: Deps, marco: UserContext
+) -> None:
+    tools = build_tools_for(marco, deps_reali)
+    tool = _tool(tools, "check_card_availability")
+    esito = await tool.run(CartaArgs(account_id=CONTO_DI_MARCO))
+    assert esito == (
+        "Carta registrata; plafond: 1250.00 EUR. "
+        "Il residuo spendibile non è disponibile nei dati."
+    )
+    assert await tool.run(CartaArgs(account_id=CONTO_ALTRUI)) == NON_DISPONIBILE
+
+
+async def test_stato_bonifico_si_limita_ai_movimenti_contabilizzati(
+    deps_reali: Deps, marco: UserContext
+) -> None:
+    tool = _tool(build_tools_for(marco, deps_reali), "get_transfer_status")
+    esito = await tool.run(
+        BonificoArgs(account_id=CONTO_DI_MARCO, descrizione="bonifico estero")
+    )
+    assert esito == "Contabilizzato il 20/09/2026: Bonifico estero -9800.00 EUR"
+    assert await tool.run(
+        BonificoArgs(account_id=CONTO_DI_MARCO, descrizione="bonifico sconosciuto")
+    ) == (
+        "Nessun bonifico contabilizzato corrispondente nei movimenti. "
+        "I dati non indicano se esista un bonifico in attesa."
+    )
+    assert await tool.run(
+        BonificoArgs(account_id=CONTO_ALTRUI, descrizione="bonifico estero")
+    ) == NON_DISPONIBILE
+
+
+def test_agente_offre_i_sette_tool_con_descrizioni_che_delimitano_i_dati(
+    deps_reali: Deps, marco: UserContext
+) -> None:
+    tools = build_tools_for(marco, deps_reali)
+    assert len(tools) == 7
+    disponibilita = _tool(tools, "check_card_availability").description
+    bonifico = _tool(tools, "get_transfer_status").description
+    assert "residuo spendibile" in disponibilita and "stato operativo" in disponibilita
+    assert "bonifici in attesa" in bonifico and "contabilizzati" in bonifico
 
 
 async def test_il_repository_e_interrogato_solo_con_l_identita_di_marco(
