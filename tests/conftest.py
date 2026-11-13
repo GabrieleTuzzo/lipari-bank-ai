@@ -13,6 +13,7 @@ from src.agents.deps import Deps
 from src.auth.deps import UserContext
 from src.db.models import Account, Card, Customer, Movement
 from src.db.repos import AccountRepository, CardRepository, MovementRepository
+from src.db.runs import RunRepository
 from src.db.session import Base
 from src.services.alerts import AlertService
 from src.services.retrieval_service import RetrievalService
@@ -22,7 +23,9 @@ CLIENTE_DI_MARCO = "C-10234"           # nel portafoglio di mbianchi
 CLIENTE_ALTRUI = "C-20417"             # nel portafoglio di un collega, pgalli
 CONTO_DI_MARCO = "IT60X0542811101000000123"
 CONTO_ALTRUI = "IT60X0542811101000000789"
-TABELLE_DEL_GIORNO = ["customers", "accounts", "movements", "cards", "compliance_alerts"]
+TABELLE_DEL_GIORNO = [
+    "customers", "accounts", "movements", "cards", "compliance_alerts", "agent_runs",
+]
 
 
 def risposta(*, tool: str | None = None, argomenti: str = "{}", testo: str | None = None,
@@ -74,7 +77,8 @@ async def session() -> AsyncIterator[AsyncSession]:
 def deps_reali(session: AsyncSession) -> Deps:
     return Deps(accounts=AccountRepository(session), movements=MovementRepository(session),
                 cards=CardRepository(session),
-                alerts=AlertService(session), retrieval=RetrievalService(session),
+                alerts=AlertService(session), runs=RunRepository(session),
+                retrieval=RetrievalService(session),
                 embedder=embedder_finto(), openai=AsyncMock(), model="gpt-4o-mini")
 
 

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
 from src.db.repos import AccountRepository, CardRepository, MovementRepository
+from src.db.runs import RunRepository
 from src.db.session import get_db
 from src.llm.embedding_client import EmbeddingClient
 from src.llm.factory import get_embedder, get_openai
@@ -21,20 +22,29 @@ class Deps:
     movements: MovementRepository
     cards: CardRepository
     alerts: AlertService
+    runs: RunRepository          # Giorno 8: dove un run sospeso aspetta
     retrieval: RetrievalService
     embedder: EmbeddingClient
     openai: AsyncOpenAI          # l'SDK, direttamente: il ciclo è scritto a mano, campo per campo
     model: str
 
 
-async def get_deps(db: Annotated[AsyncSession, Depends(get_db)]) -> Deps:
+def crea_deps(
+    db: AsyncSession, *, embedder: EmbeddingClient | None = None, openai: AsyncOpenAI | None = None
+) -> Deps:
+    """I servizi su una sessione. La usano l'endpoint e, al Giorno 8, il server MCP."""
     return Deps(
         accounts=AccountRepository(db),
         movements=MovementRepository(db),
         cards=CardRepository(db),
         alerts=AlertService(db),
+        runs=RunRepository(db),
         retrieval=RetrievalService(db),
-        embedder=get_embedder(),  # dalla factory del Giorno 4: un client per processo,
-        openai=get_openai(),      # e senza chiave un 503 che dice quale manca
+        embedder=embedder or get_embedder(),  # i test li passano; altrimenti, dalla factory
+        openai=openai or get_openai(),
         model=settings.default_model,
     )
+
+
+async def get_deps(db: Annotated[AsyncSession, Depends(get_db)]) -> Deps:
+    return crea_deps(db)

@@ -2,6 +2,8 @@
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import Any
+from sqlalchemy.dialects.postgresql import JSONB
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -177,4 +179,36 @@ class ComplianceAlert(Base):
     idempotency_key: Mapped[str] = mapped_column(String(128), unique=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+
+# ---- Giorno 8: lo stato di un run che si ferma e riprende
+JSON_O_JSONB = JSON().with_variant(JSONB(), "postgresql")    # JSONB su Postgres, JSON nei test
+
+
+class AgentRunState(Base):
+    __tablename__ = "agent_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)      # il run_id del Giorno 7
+    username: Mapped[str] = mapped_column(String(64), index=True)      # chi ha chiesto
+    role: Mapped[str] = mapped_column(String(32))                      # i tool si rifanno per lui
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    # awaiting_approval | running | done | rejected
+    messages: Mapped[list[dict[str, Any]]] = mapped_column(JSON_O_JSONB)   # ← lo stato
+    pending_calls: Mapped[list[dict[str, Any]]] = mapped_column(JSON_O_JSONB)
+    description: Mapped[str] = mapped_column(Text)                     # cosa si sta approvando
+    steps: Mapped[int] = mapped_column(Integer)
+    cost_eur: Mapped[Decimal] = mapped_column(Numeric(12, 6))
+    tool_calls: Mapped[list[str]] = mapped_column(JSON_O_JSONB)
+    decided_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # l'audit: ogni decisione del run, in ordine. Si aggiunge, non si riscrive
+    decisions: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON_O_JSONB, default=list, server_default="[]"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
+    soglia_approvazione_eur: Decimal = Decimal("5000")   # sopra, decide una persona
     app_name: str = "LipariBank AI"
     environment: Literal["development", "test", "production"] = "development"
     debug: bool = False
