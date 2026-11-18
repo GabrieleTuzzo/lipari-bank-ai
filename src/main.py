@@ -1,10 +1,13 @@
 # src/main.py — Giorno 2: la sonda di ieri, gli handler degli errori, i middleware, i router
+import asyncio
 import logging
 import re
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -12,10 +15,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.api import accounts, admin, advice, auth, categorize, chat, glossary, movements
+from src.cache import chiudi_redis, get_redis
 from src.config import settings
+from src.db.session import engine
 from src.exceptions import AppError, RateLimitError
 from src.observability.json_log import configura_log, request_id
 from src.types.error import ErrorResponse, ValidationDetail
@@ -42,7 +48,20 @@ class HealthResponse(BaseModel):
     credentials: Credentials
 
 
+class ReadyResponse(BaseModel):
+    status: Literal["ready", "not_ready"]
+    checks: dict[str, str]
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    yield
+    await chiudi_redis()
+    await engine.dispose()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title=settings.app_name,
     version="1.0.0",
     description="LipariBank AI Assistant — Bootcamp Python AI Powered, Lipari Consulting",
@@ -171,6 +190,40 @@ async def health() -> HealthResponse:
             openai=bool(settings.openai_api_key),
             anthropic=bool(settings.anthropic_api_key),
         ),
+    )
+
+
+async def _database() -> str:
+    try:
+        async with asyncio.timeout(2), engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+    except Exception:
+        logger.exception("readiness_database_ko")
+        return "ko"
+    return "ok"
+
+
+async def _cache() -> str:
+    if (redis := get_redis()) is None:
+        return "spenta"
+    try:
+        async with asyncio.timeout(1):
+            await redis.ping()
+    except Exception:
+        logger.warning("readiness_cache_ko")
+        return "ko"
+    return "ok"
+
+
+@app.get("/ready", response_model=ReadyResponse)
+async def ready(response: Response) -> ReadyResponse:
+    database, cache = await asyncio.gather(_database(), _cache())
+    pronto = database == "ok"
+    if not pronto:
+        response.status_code = 503
+    return ReadyResponse(
+        status="ready" if pronto else "not_ready",
+        checks={"database": database, "cache": cache},
     )
 
 

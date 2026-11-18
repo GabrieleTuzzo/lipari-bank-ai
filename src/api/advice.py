@@ -9,6 +9,7 @@ from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.deps import UserContext, get_current_user, require_role
+from src.cache import get_redis
 from src.config import settings
 from src.db.repos import ChatRepository
 from src.db.session import get_db
@@ -33,12 +34,16 @@ def _rate_limit_key(request: Request) -> str:
     return getattr(request.state, "username", get_remote_address(request))
 
 
-limiter = Limiter(key_func=_rate_limit_key)
+limiter = Limiter(
+    key_func=_rate_limit_key,
+    storage_uri=settings.redis_url or "memory://",
+    in_memory_fallback_enabled=True,
+)
 
 
 @cache
 def get_rewriter() -> QueryRewriter:
-    return QueryRewriter(get_llm_provider(), REWRITE_PROMPT)
+    return QueryRewriter(get_llm_provider(), REWRITE_PROMPT, cache=get_redis())
 
 
 def get_rag_service(
@@ -56,6 +61,7 @@ def get_ingest_service(
 ) -> IngestService:
     return IngestService(session, embedder)
 
+
 # src/api/advice.py — l'endpoint di ingestione: da oggi solo compliance e admin
 @router.post("/documents/ingest", response_model=IngestResponse)
 async def ingest(
@@ -67,6 +73,7 @@ async def ingest(
     del user
     quanti = await service.ingest(req.document_id, req.content, req.metadata, req.visibility)
     return IngestResponse(chunk_count=quanti, embedding_dim=1536)
+
 
 @router.post("/advice", response_model=AdviceResponse)
 @limiter.limit("15/minute")

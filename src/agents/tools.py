@@ -20,15 +20,21 @@ NESSUN_BONIFICO_REGISTRATO = (
     "Nessun bonifico contabilizzato corrispondente nei movimenti. "
     "I dati non indicano se esista un bonifico in attesa."
 )
-SENZA_DATI = frozenset({
-    NON_DISPONIBILE, NESSUN_MOVIMENTO, NESSUNA_CARTA,
-    NIENTE_NEI_DOCUMENTI, NESSUN_BONIFICO_REGISTRATO,
-})
+SENZA_DATI = frozenset(
+    {
+        NON_DISPONIBILE,
+        NESSUN_MOVIMENTO,
+        NESSUNA_CARTA,
+        NIENTE_NEI_DOCUMENTI,
+        NESSUN_BONIFICO_REGISTRATO,
+    }
+)
 
 
 class ClienteArgs(BaseModel):
-    customer_id: str = Field(min_length=1,
-                             description="Il codice cliente, come compare nella sua scheda.")
+    customer_id: str = Field(
+        min_length=1, description="Il codice cliente, come compare nella sua scheda."
+    )
 
 
 class SaldoArgs(BaseModel):
@@ -47,22 +53,28 @@ class CartaArgs(BaseModel):
 class BonificoArgs(BaseModel):
     account_id: str = Field(min_length=1, description=CONTO)
     descrizione: str = Field(
-        min_length=3, max_length=100,
+        min_length=3,
+        max_length=100,
         description="Una parte della descrizione del bonifico da cercare nei movimenti.",
     )
 
 
 class RicercaArgs(BaseModel):
-    query: str = Field(min_length=3,
-                       description="La domanda in forma completa, non una parola sola.")
+    query: str = Field(
+        min_length=3, description="La domanda in forma completa, non una parola sola."
+    )
 
 
 class SegnalazioneArgs(BaseModel):
     account_id: str = Field(min_length=1, description=CONTO)
-    motivo: str = Field(min_length=10, max_length=500,
-                        description="Perché il caso va segnalato, in una o due frasi.")
-    importo: Decimal | None = Field(default=None, gt=0,
-                                    description="L'importo dell'operazione, se c'è.")
+    motivo: str = Field(
+        min_length=10,
+        max_length=500,
+        description="Perché il caso va segnalato, in una o due frasi.",
+    )
+    importo: Decimal | None = Field(
+        default=None, gt=0, description="L'importo dell'operazione, se c'è."
+    )
 
 
 def build_tools_for(user: UserContext, deps: Deps) -> list[Tool]:
@@ -71,9 +83,10 @@ def build_tools_for(user: UserContext, deps: Deps) -> list[Tool]:
     def rifiuta(tool: str, richiesto: str) -> str:
         # il tentativo si registra: un cliente altrui chiesto cinque volte è qualcuno che prova.
         # Con l'impronta, non con il valore: cinque tentativi uguali hanno la stessa
-        logger.warning("tool_accesso_negato",
-                       extra={"tool": tool, "username": user.username,
-                              "requested": impronta(richiesto)})
+        logger.warning(
+            "tool_accesso_negato",
+            extra={"tool": tool, "username": user.username, "requested": impronta(richiesto)},
+        )
         return NON_DISPONIBILE
 
     async def conti_del_cliente(a: ClienteArgs) -> str:
@@ -106,20 +119,19 @@ def build_tools_for(user: UserContext, deps: Deps) -> list[Tool]:
         if not carte:
             return NESSUNA_CARTA
         plafonds = ", ".join(f"{c.plafond:.2f} EUR" for c in carte)
-        return (f"Carta registrata; plafond: {plafonds}. "
-                "Il residuo spendibile non è disponibile nei dati.")
+        return (
+            f"Carta registrata; plafond: {plafonds}. "
+            "Il residuo spendibile non è disponibile nei dati."
+        )
 
     async def stato_bonifico(a: BonificoArgs) -> str:
         if await deps.accounts.of_user(user.username, a.account_id) is None:
             return rifiuta("get_transfer_status", a.account_id)
-        righe = await deps.movements.recorded_transfers(
-            user.username, a.account_id, a.descrizione
-        )
+        righe = await deps.movements.recorded_transfers(user.username, a.account_id, a.descrizione)
         if not righe:
             return NESSUN_BONIFICO_REGISTRATO
         return "\n".join(
-            f"Contabilizzato il {r.booking_date:%d/%m/%Y}: "
-            f"{r.description} {r.amount:+.2f} EUR"
+            f"Contabilizzato il {r.booking_date:%d/%m/%Y}: {r.description} {r.amount:+.2f} EUR"
             for r in righe
         )
 
@@ -136,55 +148,92 @@ def build_tools_for(user: UserContext, deps: Deps) -> list[Tool]:
         # il solo tool che SCRIVE: il muro vale anche qui, prima di scrivere
         if await deps.accounts.of_user(user.username, a.account_id) is None:
             return rifiuta("apri_segnalazione_compliance", a.account_id)
-        alert, nuova = await deps.alerts.apri(autore=user.username, account_id=a.account_id,
-                                              motivo=a.motivo, importo=a.importo)
+        alert, nuova = await deps.alerts.apri(
+            autore=user.username, account_id=a.account_id, motivo=a.motivo, importo=a.importo
+        )
         if not nuova:
-            return (f"La segnalazione {alert.id} su questo conto è già aperta da oggi: nessuna "
-                    "pratica nuova. Riferisci all'utente questo numero e non riaprirla.")
-        return (f"Segnalazione {alert.id} aperta. Riferisci all'utente questo numero di pratica "
-                "e che la Compliance la prenderà in carico; non riaprirla.")
+            return (
+                f"La segnalazione {alert.id} su questo conto è già aperta da oggi: nessuna "
+                "pratica nuova. Riferisci all'utente questo numero e non riaprirla."
+            )
+        return (
+            f"Segnalazione {alert.id} aperta. Riferisci all'utente questo numero di pratica "
+            "e che la Compliance la prenderà in carico; non riaprirla."
+        )
 
     return [
-        Tool("find_customer_accounts",
-             "I conti di un cliente del portafoglio, con IBAN ed etichetta. Usalo per primo "
-             "quando la domanda nomina un cliente e non un IBAN; poi usa gli altri tool sul "
-             "conto giusto.",
-             ClienteArgs, conti_del_cliente, scrive=False, senza_dati=SENZA_DATI),
-        Tool("get_account_balance",
-             "Saldo disponibile di un conto. Usalo quando la domanda riguarda quanto c'è su un "
-             "conto o se basta per un'operazione. Per le operazioni già fatte usa "
-             "list_recent_movements.",
-             SaldoArgs, saldo, scrive=False, senza_dati=SENZA_DATI),
-        Tool("list_recent_movements",
-             "Ultimi movimenti di un conto. Usalo quando la domanda riguarda operazioni già "
-             "fatte: bonifici del mese, addebiti, pagamenti ricorrenti. Per la disponibilità "
-             "usa get_account_balance.",
-             MovimentiArgs, movimenti, scrive=False, senza_dati=SENZA_DATI),
-        Tool("check_card_availability",
-             "Verifica se sul conto è registrata una carta e mostra il suo plafond. Usalo per "
-             "domande sulla presenza della carta o sul plafond; il residuo spendibile e lo "
-             "stato operativo non sono disponibili. Non usarlo per saldo o movimenti.",
-             CartaArgs, disponibilita_carta, scrive=False, senza_dati=SENZA_DATI),
-        Tool("get_transfer_status",
-             "Cerca un bonifico nei movimenti contabilizzati del conto usando una parte della "
-             "descrizione. Usalo per verificare una registrazione contabile; non può rilevare "
-             "bonifici in attesa o lo stato presso il circuito. Per l'elenco generale usa "
-             "list_recent_movements.",
-             BonificoArgs, stato_bonifico, scrive=False,
-             senza_dati=SENZA_DATI),
-        Tool("search_documents",
-             "Usa questo tool quando la domanda riguarda regole, soglie, procedure o adempimenti "
-             "della banca. Non usarlo per dati di clienti, conti o movimenti: per quelli "
-             "esistono find_customer_accounts, get_account_balance e list_recent_movements.",
-             RicercaArgs, documenti, scrive=False, senza_dati=SENZA_DATI),
-        Tool("apri_segnalazione_compliance",
-     "Apre una segnalazione alla Compliance su un conto del portafoglio. Usalo solo se "
-     "l'utente lo chiede o se la policy recuperata la rende obbligatoria.",
-     SegnalazioneArgs, segnalazione,
-     # Giorno 8: sopra soglia, o senza importo, decide una persona
-     serve_approvazione=_sopra_soglia,
-     serve_seconda_approvazione=_richiede_seconda_approvazione,
-     senza_dati=SENZA_DATI),
+        Tool(
+            "find_customer_accounts",
+            "I conti di un cliente del portafoglio, con IBAN ed etichetta. Usalo per primo "
+            "quando la domanda nomina un cliente e non un IBAN; poi usa gli altri tool sul "
+            "conto giusto.",
+            ClienteArgs,
+            conti_del_cliente,
+            scrive=False,
+            senza_dati=SENZA_DATI,
+        ),
+        Tool(
+            "get_account_balance",
+            "Saldo disponibile di un conto. Usalo quando la domanda riguarda quanto c'è su un "
+            "conto o se basta per un'operazione. Per le operazioni già fatte usa "
+            "list_recent_movements.",
+            SaldoArgs,
+            saldo,
+            scrive=False,
+            senza_dati=SENZA_DATI,
+        ),
+        Tool(
+            "list_recent_movements",
+            "Ultimi movimenti di un conto. Usalo quando la domanda riguarda operazioni già "
+            "fatte: bonifici del mese, addebiti, pagamenti ricorrenti. Per la disponibilità "
+            "usa get_account_balance.",
+            MovimentiArgs,
+            movimenti,
+            scrive=False,
+            senza_dati=SENZA_DATI,
+        ),
+        Tool(
+            "check_card_availability",
+            "Verifica se sul conto è registrata una carta e mostra il suo plafond. Usalo per "
+            "domande sulla presenza della carta o sul plafond; il residuo spendibile e lo "
+            "stato operativo non sono disponibili. Non usarlo per saldo o movimenti.",
+            CartaArgs,
+            disponibilita_carta,
+            scrive=False,
+            senza_dati=SENZA_DATI,
+        ),
+        Tool(
+            "get_transfer_status",
+            "Cerca un bonifico nei movimenti contabilizzati del conto usando una parte della "
+            "descrizione. Usalo per verificare una registrazione contabile; non può rilevare "
+            "bonifici in attesa o lo stato presso il circuito. Per l'elenco generale usa "
+            "list_recent_movements.",
+            BonificoArgs,
+            stato_bonifico,
+            scrive=False,
+            senza_dati=SENZA_DATI,
+        ),
+        Tool(
+            "search_documents",
+            "Usa questo tool quando la domanda riguarda regole, soglie, procedure o adempimenti "
+            "della banca. Non usarlo per dati di clienti, conti o movimenti: per quelli "
+            "esistono find_customer_accounts, get_account_balance e list_recent_movements.",
+            RicercaArgs,
+            documenti,
+            scrive=False,
+            senza_dati=SENZA_DATI,
+        ),
+        Tool(
+            "apri_segnalazione_compliance",
+            "Apre una segnalazione alla Compliance su un conto del portafoglio. Usalo solo se "
+            "l'utente lo chiede o se la policy recuperata la rende obbligatoria.",
+            SegnalazioneArgs,
+            segnalazione,
+            # Giorno 8: sopra soglia, o senza importo, decide una persona
+            serve_approvazione=_sopra_soglia,
+            serve_seconda_approvazione=_richiede_seconda_approvazione,
+            senza_dati=SENZA_DATI,
+        ),
     ]
 
 

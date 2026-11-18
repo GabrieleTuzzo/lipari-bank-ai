@@ -22,10 +22,10 @@ class Deps:
     movements: MovementRepository
     cards: CardRepository
     alerts: AlertService
-    runs: RunRepository          # Giorno 8: dove un run sospeso aspetta
+    runs: RunRepository  # Giorno 8: dove un run sospeso aspetta
     retrieval: RetrievalService
     embedder: EmbeddingClient
-    openai: AsyncOpenAI          # l'SDK, direttamente: il ciclo è scritto a mano, campo per campo
+    openai: AsyncOpenAI  # l'SDK, direttamente: il ciclo è scritto a mano, campo per campo
     model: str
 
 

@@ -5,11 +5,13 @@ import instructor
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
+from src.cache import get_redis
 from src.config import settings
 from src.exceptions import AppError
 from src.llm.anthropic_provider import AnthropicProvider
 from src.llm.client import LLMProvider
 from src.llm.embedding_client import EmbeddingClient
+from src.llm.embeddings import CachedEmbedder
 from src.llm.openai_provider import OpenAIProvider
 
 
@@ -58,4 +60,6 @@ def get_instructor() -> instructor.AsyncInstructor:
 # src/llm/factory.py — in fondo
 def get_embedder() -> EmbeddingClient:
     # lo stesso modello per i documenti e per le domande: è la regola che non si viola
-    return EmbeddingClient(_openai(), settings.embedding_model)
+    base = EmbeddingClient(_openai(), settings.embedding_model)
+    redis = get_redis()
+    return CachedEmbedder(base, redis) if redis is not None else base

@@ -14,27 +14,51 @@ class RunRepository:
         self.session = session
 
     async def sospendi(
-        self, *, run_id: str, username: str, role: str, messages: list[dict[str, Any]],
-        pending_calls: list[dict[str, Any]], description: str, steps: int,
-        cost_eur: Decimal, tool_calls: list[str],
+        self,
+        *,
+        run_id: str,
+        username: str,
+        role: str,
+        messages: list[dict[str, Any]],
+        pending_calls: list[dict[str, Any]],
+        description: str,
+        steps: int,
+        cost_eur: Decimal,
+        tool_calls: list[str],
     ) -> None:
         """Salva il run in attesa. `merge`: lo stesso run può fermarsi più di una volta.
 
         `decisions` non è fra i campi: il merge non lo tocca, e le firme di prima restano.
         """
-        await self.session.merge(AgentRunState(
-            id=run_id, username=username, role=role, status="awaiting_approval",
-            messages=messages, pending_calls=pending_calls, description=description,
-            steps=steps, cost_eur=cost_eur, tool_calls=tool_calls,
-            decided_by=None, decision_reason=None,
-        ))
+        await self.session.merge(
+            AgentRunState(
+                id=run_id,
+                username=username,
+                role=role,
+                status="awaiting_approval",
+                messages=messages,
+                pending_calls=pending_calls,
+                description=description,
+                steps=steps,
+                cost_eur=cost_eur,
+                tool_calls=tool_calls,
+                decided_by=None,
+                decision_reason=None,
+            )
+        )
         await self.session.commit()
 
     async def get(self, run_id: str) -> AgentRunState | None:
         return await self.session.get(AgentRunState, run_id)
 
     async def decidi(
-        self, run_id: str, *, da: str, stato: str, stato_atteso: str, motivo: str | None,
+        self,
+        run_id: str,
+        *,
+        da: str,
+        stato: str,
+        stato_atteso: str,
+        motivo: str | None,
         primo_approvatore: str | None = None,
     ) -> bool:
         """Cambia stato solo dalla fase attesa; il bool dice se questa decisione ha vinto.
@@ -48,10 +72,14 @@ class RunRepository:
         )
         if primo_approvatore is not None:
             query = query.where(AgentRunState.decided_by == primo_approvatore)
-        esito = await self.session.execute(query.values(
-            status=stato, decided_by=da, decision_reason=motivo,
-            updated_at=datetime.now(UTC),
-        ))
+        esito = await self.session.execute(
+            query.values(
+                status=stato,
+                decided_by=da,
+                decision_reason=motivo,
+                updated_at=datetime.now(UTC),
+            )
+        )
         vinta = bool(getattr(esito, "rowcount", 0))
         if vinta:
             # nello storico, nella stessa transazione: chi ha deciso cosa, prima che l'azione parta
@@ -60,7 +88,8 @@ class RunRepository:
                 decisione = {
                     "da": da,
                     "esito": "respinta" if stato == "rejected" else "approvata",
-                    "motivo": motivo, "azione": riga.description,
+                    "motivo": motivo,
+                    "azione": riga.description,
                     "quando": datetime.now(UTC).isoformat(),
                 }
                 riga.decisions = [*riga.decisions, decisione]  # una lista nuova: il JSON cambia
@@ -69,7 +98,8 @@ class RunRepository:
 
     async def chiudi(self, run_id: str, stato: str) -> None:
         await self.session.execute(
-            update(AgentRunState).where(AgentRunState.id == run_id)
+            update(AgentRunState)
+            .where(AgentRunState.id == run_id)
             .values(status=stato, updated_at=datetime.now(UTC))
         )
         await self.session.commit()

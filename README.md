@@ -21,6 +21,18 @@ Copia il valore stampato in `JWT_SECRET` nel file `.env`, poi avvia l'app:
 uv run uvicorn src.main:app --reload
 ```
 
+## Avvio con Docker
+
+```powershell
+cp .env.example .env
+# Riempi JWT_SECRET e le chiavi opzionali nel file .env.
+docker compose up --build -d
+bash scripts/smoke.sh
+```
+
+Redis è opzionale. Senza `REDIS_URL`, riscrittura ed embedding restano nel processo.
+Con il compose, Redis viene condiviso fra i worker dell'API.
+
 Per eseguire i test:
 
 ```powershell

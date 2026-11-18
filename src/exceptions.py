@@ -46,6 +46,7 @@ class AccountNotFoundError(NotFoundError):
         super().__init__(f"Il conto {account_id} non è nel tuo portafoglio")
         self.code = "ACCOUNT_NOT_FOUND"
 
+
 class InvalidPeriodError(AppError):
     def __init__(self) -> None:
         super().__init__(422, "INVALID_PERIOD", "La data di inizio viene dopo quella di fine")

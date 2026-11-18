@@ -67,6 +67,7 @@ class ChatRepository:
         )
         return Decimal(str(speso)) if speso is not None else Decimal("0")
 
+
 # src/db/repos.py — estratto: i tre metodi che i tool usano, dal Giorno 3
 class AccountRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -152,22 +153,6 @@ class MovementRepository:
         )
         return list((await self.session.execute(stmt)).all())
 
-
-class CardRepository:
-    def __init__(self, session: AsyncSession) -> None:
-        self.session = session
-
-    async def for_account(self, username: str, account_id: str) -> list[Card]:
-        """Le carte registrate su un conto del portafoglio dell'operatore."""
-        stmt = (
-            select(Card)
-            .join(Account, Account.id == Card.account_id)
-            .join(Customer, Customer.id == Account.customer_id)
-            .where(Account.id == account_id, Customer.operator == username)
-            .order_by(Card.id)
-        )
-        return list((await self.session.scalars(stmt)).all())
-
     async def spent_by_month(
         self, username: str, account_id: str, dal: date, al: date
     ) -> list[tuple[str, Decimal]]:
@@ -187,3 +172,19 @@ class CardRepository:
             .order_by(mese)
         )
         return list((await self.session.execute(stmt)).all())
+
+
+class CardRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def for_account(self, username: str, account_id: str) -> list[Card]:
+        """Le carte registrate su un conto del portafoglio dell'operatore."""
+        stmt = (
+            select(Card)
+            .join(Account, Account.id == Card.account_id)
+            .join(Customer, Customer.id == Account.customer_id)
+            .where(Account.id == account_id, Customer.operator == username)
+            .order_by(Card.id)
+        )
+        return list((await self.session.scalars(stmt)).all())

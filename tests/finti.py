@@ -24,6 +24,7 @@ def openai_finto(
         max_retries=max_retries,
     )
 
+
 # tests/finti.py — in fondo: gli embedding finti, e un modello che risponde come gli si dice
 def vettore(testo: str) -> list[float]:
     """Un embedding finto ma coerente: le parole in comune avvicinano i testi."""
@@ -60,9 +61,7 @@ class ModelloEco:
         self, messages: list[Message], max_tokens: int = 500, tools: list[ToolSpec] | None = None
     ) -> LLMResponse:
         content = f"Echo: {messages[-1].content}"
-        return LLMResponse(
-            content=content, tokens_used=2, cost_eur=Decimal("0"), model="finto"
-        )
+        return LLMResponse(content=content, tokens_used=2, cost_eur=Decimal("0"), model="finto")
 
     async def stream(
         self, messages: list[Message], max_tokens: int = 500

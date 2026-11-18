@@ -34,10 +34,15 @@ class AlertService:
         if esistente is not None:
             return esistente, False
 
-        alert = ComplianceAlert(account_id=account_id, opened_by=autore, reason=motivo,
-                                amount=importo, idempotency_key=chiave)
+        alert = ComplianceAlert(
+            account_id=account_id,
+            opened_by=autore,
+            reason=motivo,
+            amount=importo,
+            idempotency_key=chiave,
+        )
         try:
-            async with self.session.begin_nested():   # due chiamate insieme: decide il vincolo
+            async with self.session.begin_nested():  # due chiamate insieme: decide il vincolo
                 self.session.add(alert)
         except IntegrityError:
             vincitrice = await self._per_chiave(chiave)

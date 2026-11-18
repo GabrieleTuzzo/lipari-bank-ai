@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.observability.ledger import CostLedger
 
 from src.db.models import ChatSession
 from src.db.repos import AccountRepository, ChatRepository
@@ -14,6 +13,7 @@ from src.llm.client import LLMProvider
 from src.llm.tools import TOOLS_SCHEMA, costruisci_strumenti
 from src.llm.types import LLMResponse, Message
 from src.observability.cost_tracker import CostTracker
+from src.observability.ledger import CostLedger
 from src.types.chat import ChatRequest, ChatResponse, ToolCallInfo
 
 FINESTRA = 20  # quanti messaggi di storia entrano nel prompt

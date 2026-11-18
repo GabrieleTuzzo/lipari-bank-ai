@@ -4,7 +4,7 @@ import sys
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import AliasChoices, Field, ValidationError
+from pydantic import AliasChoices, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsError
 
 
@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    soglia_approvazione_eur: Decimal = Decimal("5000")   # sopra, decide una persona
+    soglia_approvazione_eur: Decimal = Decimal("5000")  # sopra, decide una persona
     app_name: str = "LipariBank AI"
     environment: Literal["development", "test", "production"] = "development"
     debug: bool = False
@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     anthropic_api_key: str = ""
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    postgres_password: str = ""
+    redis_url: str = ""
 
     default_model: str = "gpt-4o-mini"
     embedding_model: str = "text-embedding-3-small"
@@ -43,6 +45,13 @@ class Settings(BaseSettings):
         gt=0,
         validation_alias=AliasChoices("DAILY_BUDGET_EUR", "DAILY_COST_LIMIT_EUR"),
     )
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def _non_il_segnaposto(cls, value: str) -> str:
+        if value.startswith("cambiami"):
+            raise ValueError("è il valore d'esempio di .env.example, generane uno tuo")
+        return value
 
 
 def spiega(errore: ValidationError) -> str:

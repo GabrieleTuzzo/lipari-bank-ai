@@ -11,7 +11,7 @@ from src.agents.loop import RunResult, costo_chiamata, run_agent
 from src.agents.tools import build_tools_for
 from src.auth.deps import UserContext
 
-MODELLO_TRIAGE = "gpt-4o-mini"        # classificare costa poco: il modello piccolo basta
+MODELLO_TRIAGE = "gpt-4o-mini"  # classificare costa poco: il modello piccolo basta
 
 PROMPT_TRIAGE = """Classifica la domanda di un operatore di filiale. Rispondi con una parola sola:
 dati_conto  se riguarda clienti, conti, saldi o movimenti;
@@ -42,20 +42,24 @@ class Specialista:
 
 SPECIALISTI = {
     "dati_conto": Specialista(
-        "dati_conto", PROMPT_DATI_CONTO,
+        "dati_conto",
+        PROMPT_DATI_CONTO,
         ("find_customer_accounts", "get_account_balance", "list_recent_movements"),
     ),
     "policy": Specialista("policy", PROMPT_POLICY, ("search_documents",)),
 }
-INSTRADAMENTO = {"dati_conto": ["dati_conto"], "policy": ["policy"],
-                 "entrambi": ["dati_conto", "policy"]}
+INSTRADAMENTO = {
+    "dati_conto": ["dati_conto"],
+    "policy": ["policy"],
+    "entrambi": ["dati_conto", "policy"],
+}
 
 
 class Contributo(BaseModel):
     """Quello che uno specialista consegna: dati che il codice sa, non impressioni."""
 
     specialista: Literal["dati_conto", "policy"]
-    completo: bool            # ha risposto il modello, non il tetto: lo dice stopped_by
+    completo: bool  # ha risposto il modello, non il tetto: lo dice stopped_by
     stopped_by: str
     contenuto: str
     tool_calls: list[str]
@@ -76,14 +80,17 @@ async def run_supervisor(user: UserContext, domanda: str, deps: Deps) -> Supervi
     # 1. il triage: una chiamata, un insieme chiuso di risposte. Non è un agente, è una
     #    classificazione; e se risponde altro, si prende la strada più prudente
     triage = await deps.openai.chat.completions.create(
-        model=MODELLO_TRIAGE, max_tokens=5,
-        messages=[{"role": "system", "content": PROMPT_TRIAGE},
-                  {"role": "user", "content": domanda}],
+        model=MODELLO_TRIAGE,
+        max_tokens=5,
+        messages=[
+            {"role": "system", "content": PROMPT_TRIAGE},
+            {"role": "user", "content": domanda},
+        ],
     )
     costo += costo_chiamata(triage.usage, MODELLO_TRIAGE)
     scelta = (triage.choices[0].message.content or "").strip().lower()
     if scelta not in INSTRADAMENTO:
-        scelta = "entrambi"                  # al più due specialisti: il tetto è nella tabella
+        scelta = "entrambi"  # al più due specialisti: il tetto è nella tabella
 
     # 2. ognuno col SUO prompt e i SUOI tool, già costruiti per l'utente
     tutti = build_tools_for(user, deps)
@@ -91,26 +98,41 @@ async def run_supervisor(user: UserContext, domanda: str, deps: Deps) -> Supervi
     for nome in INSTRADAMENTO[scelta]:
         s = SPECIALISTI[nome]
         run: RunResult = await run_agent(
-            messaggi=[{"role": "system", "content": s.system_prompt},
-                      {"role": "user", "content": domanda}],
+            messaggi=[
+                {"role": "system", "content": s.system_prompt},
+                {"role": "user", "content": domanda},
+            ],
             tools=[t for t in tutti if t.name in s.tool_names],
-            client=deps.openai, model=deps.model,
+            client=deps.openai,
+            model=deps.model,
         )
         costo += run.cost_eur
-        contributi.append(Contributo(
-            specialista=s.nome, completo=run.stopped_by == "model", stopped_by=run.stopped_by,
-            contenuto=run.reply, tool_calls=run.tool_calls,
-        ))
+        contributi.append(
+            Contributo(
+                specialista=s.nome,
+                completo=run.stopped_by == "model",
+                stopped_by=run.stopped_by,
+                contenuto=run.reply,
+                tool_calls=run.tool_calls,
+            )
+        )
 
     # 3. la sintesi riceve dati, non prosa incollata: sa chi ha detto cosa e se ha finito
-    materiale = json.dumps({"domanda": domanda,
-                            "contributi": [c.model_dump() for c in contributi]},
-                           ensure_ascii=False)
+    materiale = json.dumps(
+        {"domanda": domanda, "contributi": [c.model_dump() for c in contributi]}, ensure_ascii=False
+    )
     sintesi = await deps.openai.chat.completions.create(
-        model=deps.model, max_tokens=500,
-        messages=[{"role": "system", "content": PROMPT_SINTESI},
-                  {"role": "user", "content": materiale}],
+        model=deps.model,
+        max_tokens=500,
+        messages=[
+            {"role": "system", "content": PROMPT_SINTESI},
+            {"role": "user", "content": materiale},
+        ],
     )
     costo += costo_chiamata(sintesi.usage, deps.model)
-    return SupervisorResult(risposta=sintesi.choices[0].message.content or "",
-                            instradamento=scelta, contributi=contributi, cost_eur=costo)
+    return SupervisorResult(
+        risposta=sintesi.choices[0].message.content or "",
+        instradamento=scelta,
+        contributi=contributi,
+        cost_eur=costo,
+    )

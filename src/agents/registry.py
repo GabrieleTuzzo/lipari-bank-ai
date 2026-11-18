@@ -15,8 +15,8 @@ class Tool:
     name: str
     description: str
     args_model: type[BaseModel]
-    run: Callable[[Any], Awaitable[str]]   # riceve un'istanza di args_model, già validata
-    scrive: bool = True                    # chi non lo dichiara è trattato come chi scrive
+    run: Callable[[Any], Awaitable[str]]  # riceve un'istanza di args_model, già validata
+    scrive: bool = True  # chi non lo dichiara è trattato come chi scrive
     # le risposte che dicono «il dato non c'è»: nel log diventano result_kind="vuoto"
     senza_dati: frozenset[str] = frozenset()
     # Solo per chi scrive: dice, dagli argomenti validati, se serve l'approvazione.

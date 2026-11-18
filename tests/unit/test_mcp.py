@@ -23,12 +23,15 @@ RADICE = Path(__file__).resolve().parents[2]
 
 def _falso(ruolo: str) -> str:
     """Un token con il ruolo che il chiamante preferisce, firmato con un segreto qualunque."""
-    return jwt.encode({"sub": "mbianchi", "role": ruolo}, "un-altro-segreto-lungo-abbastanza-32b",
-                      algorithm="HS256")
+    return jwt.encode(
+        {"sub": "mbianchi", "role": ruolo},
+        "un-altro-segreto-lungo-abbastanza-32b",
+        algorithm="HS256",
+    )
 
 
 async def test_il_server_si_descrive() -> None:
-    async with Client(server.mcp) as c:                       # in memoria: niente processo
+    async with Client(server.mcp) as c:  # in memoria: niente processo
         tools = {t.name: t for t in await c.list_tools()}
     assert set(tools) == {"search_policy", "find_customer_accounts", "get_account_balance"}
     assert "Usalo quando" in (tools["search_policy"].description or "")
@@ -41,22 +44,27 @@ async def test_un_identita_non_verificata_non_passa(
 ) -> None:
     monkeypatch.setenv("LIPARI_TOKEN", token)
     async with Client(server.mcp) as c:
-        esito = await c.call_tool("search_policy", {"query": "soglie paesi a rischio"},
-                                  raise_on_error=False)
+        esito = await c.call_tool(
+            "search_policy", {"query": "soglie paesi a rischio"}, raise_on_error=False
+        )
     assert esito.is_error and "Identità non verificata" in str(esito.content)
 
 
 async def test_via_stdio_il_server_rispetta_il_portafoglio(tmp_path: Path) -> None:
     db = tmp_path / "banca.db"
     await prepara_db(db)
-    ambiente = {**os.environ, "DATABASE_URL": f"sqlite+aiosqlite:///{db}",
-                "LIPARI_TOKEN": create_access_token("mbianchi", "operator"),
-                # il server costruisce i suoi client anche per gli strumenti che non chiamano
-                # il modello: una chiave finta basta, e nessuna chiamata la usa
-                "OPENAI_API_KEY": "sk-test-mai-chiamata"}
-    trasporto = StdioTransport(command=sys.executable, args=["-m", "liparibank_mcp.server"],
-                               env=ambiente, cwd=str(RADICE))
-    async with Client(trasporto) as c:                        # un processo vero, figlio del test
+    ambiente = {
+        **os.environ,
+        "DATABASE_URL": f"sqlite+aiosqlite:///{db}",
+        "LIPARI_TOKEN": create_access_token("mbianchi", "operator"),
+        # il server costruisce i suoi client anche per gli strumenti che non chiamano
+        # il modello: una chiave finta basta, e nessuna chiamata la usa
+        "OPENAI_API_KEY": "sk-test-mai-chiamata",
+    }
+    trasporto = StdioTransport(
+        command=sys.executable, args=["-m", "liparibank_mcp.server"], env=ambiente, cwd=str(RADICE)
+    )
+    async with Client(trasporto) as c:  # un processo vero, figlio del test
         proprio = await c.call_tool("get_account_balance", {"account_id": CONTO_DI_MARCO})
         altrui = await c.call_tool("get_account_balance", {"account_id": CONTO_ALTRUI})
     testi = [c.content[0] for c in (proprio, altrui)]
@@ -86,9 +94,13 @@ async def test_il_loop_del_giorno_7_usa_il_server_senza_cambiare(
     ]
     async with Client(server.mcp) as c:
         tools = await tools_dal_server(c, nomi={"search_policy"})
-        run = await run_agent(messaggi=[{"role": "user", "content": "soglie?"}], tools=tools,
-                              client=modello, model="gpt-4o-mini")
-    assert tools[0].scrive is False                            # dichiarato dal server
+        run = await run_agent(
+            messaggi=[{"role": "user", "content": "soglie?"}],
+            tools=tools,
+            client=modello,
+            model="gpt-4o-mini",
+        )
+    assert tools[0].scrive is False  # dichiarato dal server
     osservazione = modello.chat.completions.create.call_args.kwargs["messages"][-1]["content"]
     assert osservazione == "Niente nei documenti visibili a questo ruolo."
     assert (run.stopped_by, run.tool_calls) == ("model", ["search_policy"])

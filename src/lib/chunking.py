@@ -6,7 +6,7 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]
     while start < len(text):
         end = start + chunk_size
         if end < len(text):
-            for sep in ['. ', '.\n', '? ', '! ', '\n\n']:
+            for sep in [". ", ".\n", "? ", "! ", "\n\n"]:
                 idx = text.rfind(sep, start, end)
                 if idx > start + chunk_size // 2:
                     end = idx + len(sep)

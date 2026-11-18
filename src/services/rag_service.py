@@ -75,11 +75,18 @@ class RAGService:
         phases: dict[str, float] = {}
         avvisi: list[str] = []
         used_fallback = False
+        cache_hit = False
+        rewrite_tokens = 0
+        rewrite_cost = 0.0
 
         started = perf_counter()
         try:
             async with asyncio.timeout(self.TIMEOUT_FASE_S):
-                rewritten_query = await self.rewriter.rewrite_cached(question)
+                riscrittura = await self.rewriter.riscrivi_per_ricerca(question)
+                rewritten_query = riscrittura.testo
+                cache_hit = riscrittura.da_cache
+                rewrite_tokens = riscrittura.tokens
+                rewrite_cost = float(riscrittura.cost_eur)
         except TimeoutError:
             rewritten_query = question
             avvisi.append(
@@ -108,14 +115,19 @@ class RAGService:
             )
             logger.info(
                 "advice_completata",
-                extra={"used_fallback": True, "role": user.role, **phases},
+                extra={
+                    "used_fallback": True,
+                    "cache_hit": cache_hit,
+                    "role": user.role,
+                    **phases,
+                },
             )
             return AdviceResponse(
                 answer=answer,
                 citations=[],
                 rewritten_query=rewritten_query,
-                tokens_used=0,
-                cost_eur=0.0,
+                tokens_used=rewrite_tokens,
+                cost_eur=rewrite_cost,
                 retrieved_chunks=0,
             )
         phases["embedding_ms"] = (perf_counter() - started) * 1000
@@ -138,28 +150,38 @@ class RAGService:
             )
             logger.info(
                 "advice_completata",
-                extra={"used_fallback": True, "role": user.role, **phases},
+                extra={
+                    "used_fallback": True,
+                    "cache_hit": cache_hit,
+                    "role": user.role,
+                    **phases,
+                },
             )
             return AdviceResponse(
                 answer=answer,
                 citations=[],
                 rewritten_query=rewritten_query,
-                tokens_used=0,
-                cost_eur=0.0,
+                tokens_used=rewrite_tokens,
+                cost_eur=rewrite_cost,
                 retrieved_chunks=0,
             )
         phases["retrieval_ms"] = (perf_counter() - started) * 1000
         if not candidates:
             logger.info(
                 "advice_completata",
-                extra={"used_fallback": used_fallback, "role": user.role, **phases},
+                extra={
+                    "used_fallback": used_fallback,
+                    "cache_hit": cache_hit,
+                    "role": user.role,
+                    **phases,
+                },
             )
             return AdviceResponse(
                 answer="\n".join([*avvisi, RIFIUTO]),
                 citations=[],
                 rewritten_query=rewritten_query,
-                tokens_used=0,
-                cost_eur=0.0,
+                tokens_used=rewrite_tokens,
+                cost_eur=rewrite_cost,
                 retrieved_chunks=0,
             )
 
@@ -215,14 +237,19 @@ class RAGService:
             citations = citazioni(answer, passages)
             logger.info(
                 "advice_completata",
-                extra={"used_fallback": True, "role": user.role, **phases},
+                extra={
+                    "used_fallback": True,
+                    "cache_hit": cache_hit,
+                    "role": user.role,
+                    **phases,
+                },
             )
             return AdviceResponse(
                 answer=answer,
                 citations=citations,
                 rewritten_query=rewritten_query,
-                tokens_used=rerank_tokens,
-                cost_eur=rerank_cost,
+                tokens_used=rerank_tokens + rewrite_tokens,
+                cost_eur=float(rerank_cost) + rewrite_cost,
                 rerank_tokens_used=rerank_tokens,
                 rerank_cost_eur=rerank_cost,
                 rerank_latency_ms=rerank_latency,
@@ -233,15 +260,20 @@ class RAGService:
         refused = RIFIUTO in response.content
         logger.info(
             "advice_completata",
-            extra={"used_fallback": used_fallback, "role": user.role, **phases},
+            extra={
+                "used_fallback": used_fallback,
+                "cache_hit": cache_hit,
+                "role": user.role,
+                **phases,
+            },
         )
         answer = "\n".join([*avvisi, response.content])
         return AdviceResponse(
             answer=answer,
             citations=[] if refused else citazioni(response.content, passages),
             rewritten_query=rewritten_query,
-            tokens_used=response.tokens_used + rerank_tokens,
-            cost_eur=float(response.cost_eur) + rerank_cost,
+            tokens_used=response.tokens_used + rerank_tokens + rewrite_tokens,
+            cost_eur=float(response.cost_eur) + rerank_cost + rewrite_cost,
             rerank_tokens_used=rerank_tokens,
             rerank_cost_eur=rerank_cost,
             rerank_latency_ms=rerank_latency,

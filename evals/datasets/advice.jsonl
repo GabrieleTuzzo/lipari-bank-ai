@@ -1,0 +1,8 @@
+{"role":"operator","question":"Qual è il costo del bonifico estero?"}
+{"role":"operator","question":"Quanto costa un bonifico SEPA online?"}
+{"role":"operator","question":"Quali sono i tempi del bonifico estero?"}
+{"role":"operator","question":"Il bonifico istantaneo ha un limite?"}
+{"role":"compliance_lead","question":"Cosa non si comunica al cliente sulle istruttorie in corso?"}
+{"role":"compliance_lead","question":"Quando sospendere un bonifico verso il Venezuela?"}
+{"role":"risk_lead","question":"Quali verifiche servono per una controparte venezuelana?"}
+{"role":"risk_lead","question":"Quali operazioni sono consentite verso il Venezuela?"}

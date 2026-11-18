@@ -13,22 +13,22 @@ from src.auth.tokens import decode_token
 from src.db.session import AsyncSessionLocal
 
 mcp = FastMCP("liparibank")
-SOLA_LETTURA = {"readOnlyHint": True}      # lo leggono i client: questi tool non scrivono
+SOLA_LETTURA = {"readOnlyHint": True}  # lo leggono i client: questi tool non scrivono
 
 
 def identita() -> UserContext:
     """Chi sta chiamando. Non lo dice un parametro: lo dice un token firmato, e qui si verifica."""
     token = os.environ.get("LIPARI_TOKEN", "")
     try:
-        payload = decode_token(token)            # firma e scadenza, come al Giorno 6
+        payload = decode_token(token)  # firma e scadenza, come al Giorno 6
     except HTTPException as e:
         raise ToolError(f"Identità non verificata: {e.detail}.") from e
     return UserContext(username=str(payload["sub"]), role=str(payload.get("role", "public")))
 
 
 async def _esegui(nome: str, args: BaseModel) -> str:
-    utente = identita()                          # a ogni chiamata: un token scade
-    async with AsyncSessionLocal() as db:        # la sessione è del server, l'identità no
+    utente = identita()  # a ogni chiamata: un token scade
+    async with AsyncSessionLocal() as db:  # la sessione è del server, l'identità no
         tool = next(t for t in build_tools_for(utente, crea_deps(db)) if t.name == nome)
         return await tool.run(args)
 
@@ -77,4 +77,4 @@ async def get_account_balance(account_id: str) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run()                                    # transport stdio, il default
+    mcp.run()  # transport stdio, il default

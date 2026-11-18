@@ -17,15 +17,20 @@ RIFIUTO = (
 )
 
 
-async def riprendi(stato: AgentRunState, *, approvato: bool, da: str, motivo: str | None,
-                   deps: Deps) -> RunResult:
+async def riprendi(
+    stato: AgentRunState, *, approvato: bool, da: str, motivo: str | None, deps: Deps
+) -> RunResult:
     """Rimette in piedi la conversazione salvata e fa ripartire il ciclo da dove si era fermato."""
     # i tool si rifanno per CHI HA CHIESTO, mai per chi approva: sono closure, non dati
     richiedente = UserContext(username=stato.username, role=stato.role)
     tools = build_tools_for(richiedente, deps)
     by_name = {t.name: t for t in tools}
-    run = RunResult(run_id=stato.id, steps=stato.steps, tool_calls=list(stato.tool_calls),
-                    cost_eur=Decimal(stato.cost_eur))
+    run = RunResult(
+        run_id=stato.id,
+        steps=stato.steps,
+        tool_calls=list(stato.tool_calls),
+        cost_eur=Decimal(stato.cost_eur),
+    )
     # lo stato è una lista di dizionari, e tale resta: il cast dice solo di che forma sono
     messaggi = [cast(ChatCompletionMessageParam, m) for m in stato.messages]
 
@@ -39,5 +44,12 @@ async def riprendi(stato: AgentRunState, *, approvato: bool, da: str, motivo: st
         messaggi.append({"role": "tool", "tool_call_id": call.id, "content": esito})
 
     # e il ciclo riparte: stesso run, stessi passi già contati, stesso costo già speso
-    return await run_agent(messaggi=messaggi, tools=tools, client=deps.openai, model=deps.model,
-                           runs=deps.runs, user=richiedente, run=run)
+    return await run_agent(
+        messaggi=messaggi,
+        tools=tools,
+        client=deps.openai,
+        model=deps.model,
+        runs=deps.runs,
+        user=richiedente,
+        run=run,
+    )

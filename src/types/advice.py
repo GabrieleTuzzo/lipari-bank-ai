@@ -33,7 +33,7 @@ class AdviceResponse(BaseModel):
     citations: list[Citation]
     rewritten_query: str
     tokens_used: int
-    cost_eur: float
+    cost_eur: float  # dal Giorno 10: generazione e riscrittura
     rerank_tokens_used: int = 0
     rerank_cost_eur: float = 0.0
     rerank_latency_ms: float = 0.0

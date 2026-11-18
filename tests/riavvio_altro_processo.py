@@ -17,12 +17,18 @@ async def main(percorso: Path, run_id: str, approvatore: str) -> None:
     modello = AsyncMock()
     modello.chat.completions.create.return_value = risposta(testo="Segnalazione aperta.")
     app = crea_app(apri_db(percorso), modello)
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
-                                 base_url="http://test") as c:
-        r = await c.post(f"/api/ai/agent/{run_id}/approve",
-                         headers={"X-Utente": approvatore})
-    print(json.dumps({"status": r.status_code,
-                      "stopped_by": r.json().get("stopped_by") if r.is_success else None}))
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        r = await c.post(f"/api/ai/agent/{run_id}/approve", headers={"X-Utente": approvatore})
+    print(
+        json.dumps(
+            {
+                "status": r.status_code,
+                "stopped_by": r.json().get("stopped_by") if r.is_success else None,
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

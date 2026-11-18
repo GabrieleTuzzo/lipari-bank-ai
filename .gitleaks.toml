@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "le chiavi finte dei test"
+regexes = ['''sk-(ant-)?(test|prova|finta)[\w-]*''']
