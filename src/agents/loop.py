@@ -42,7 +42,7 @@ class RunResult:
     reply: str = ""
     steps: int = 0
     tool_calls: list[str] = field(default_factory=list)
-    stopped_by: str = ""              # "model" | "max_steps" | "budget" | "awaiting_approval"
+    stopped_by: str = ""              # "model" | "max_steps" | "budget" | approval states
     cost_eur: Decimal = Decimal("0")
 
 
@@ -131,6 +131,20 @@ def richiede_approvazione(by_name: dict[str, Tool],
     except ValidationError:
         return False                              # non partirà: _execute rimanda l'errore
     return tool.serve_approvazione is None or tool.serve_approvazione(args)
+
+
+def richiede_seconda_approvazione(
+    by_name: dict[str, Tool], call: ChatCompletionMessageFunctionToolCall
+) -> bool:
+    """Valuta dagli argomenti validati se il tool richiede due firme."""
+    tool = by_name.get(call.function.name)
+    if tool is None or tool.serve_seconda_approvazione is None:
+        return False
+    try:
+        args = tool.args_model.model_validate_json(call.function.arguments)
+    except ValidationError:
+        return False
+    return tool.serve_seconda_approvazione(args)
 
 
 def descrivi_attesa(by_name: dict[str, Tool], calls: list[ChatCompletionMessageFunctionToolCall],

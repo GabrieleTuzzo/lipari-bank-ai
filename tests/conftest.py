@@ -24,7 +24,7 @@ CLIENTE_ALTRUI = "C-20417"             # nel portafoglio di un collega, pgalli
 CONTO_DI_MARCO = "IT60X0542811101000000123"
 CONTO_ALTRUI = "IT60X0542811101000000789"
 TABELLE_DEL_GIORNO = [
-    "customers", "accounts", "movements", "cards", "compliance_alerts", "agent_runs",
+    "customers", "accounts", "movements", "cards", "compliance_alerts", "agent_runs", "llm_calls",
 ]
 
 

@@ -182,9 +182,20 @@ def build_tools_for(user: UserContext, deps: Deps) -> list[Tool]:
      "l'utente lo chiede o se la policy recuperata la rende obbligatoria.",
      SegnalazioneArgs, segnalazione,
      # Giorno 8: sopra soglia, o senza importo, decide una persona
-     serve_approvazione=_sopra_soglia, senza_dati=SENZA_DATI),
+     serve_approvazione=_sopra_soglia,
+     serve_seconda_approvazione=_richiede_seconda_approvazione,
+     senza_dati=SENZA_DATI),
     ]
+
 
 def _sopra_soglia(a: SegnalazioneArgs) -> bool:
     """Un importo che non c'è non è un importo piccolo: nel dubbio si chiede."""
-    return a.importo is None or a.importo > settings.soglia_approvazione_eur
+    return a.importo is None or _importo_sopra_soglia(a)
+
+
+def _richiede_seconda_approvazione(a: SegnalazioneArgs) -> bool:
+    return _importo_sopra_soglia(a)
+
+
+def _importo_sopra_soglia(a: SegnalazioneArgs) -> bool:
+    return a.importo is not None and a.importo > settings.soglia_approvazione_eur

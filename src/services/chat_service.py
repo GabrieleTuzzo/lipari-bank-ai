@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.observability.ledger import CostLedger
 
 from src.db.models import ChatSession
 from src.db.repos import AccountRepository, ChatRepository
@@ -70,7 +71,14 @@ class ChatService:
             cost_eur=risposta.cost_eur,
             model_used=risposta.model,
         )
-        await self.session.commit()  # una volta, a lavoro finito: le due scritture valgono insieme
+        CostLedger(self.session).aggiungi(  # Giorno 9: il costo anche nel registro
+            endpoint="chat",
+            username=chat.user_id,
+            model=risposta.model,
+            tokens=risposta.tokens_used,
+            cost_eur=risposta.cost_eur,
+        )
+        await self.session.commit()  # una volta, a lavoro finito: le tre scritture valgono insieme
 
     async def _saldo(self, user_id: str, account_id: str) -> Decimal:
         conto = await self.accounts.of_user(user_id, account_id)

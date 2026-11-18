@@ -1,12 +1,15 @@
 # src/api/agent.py — Giorno 8: l'agente, e le due decisioni che può aspettare
+from decimal import Decimal
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from openai.types.chat import ChatCompletionMessageFunctionToolCall
 from pydantic import BaseModel, Field
 
+from src.observability.ledger import CostLedger
 from src.agents.approval import riprendi
 from src.agents.deps import Deps, get_deps
-from src.agents.loop import RunResult, run_agent
+from src.agents.loop import RunResult, richiede_seconda_approvazione, run_agent
 from src.agents.prompts import AGENT_SYSTEM
 from src.agents.supervisor import run_supervisor
 from src.agents.tools import build_tools_for
@@ -26,7 +29,7 @@ class AgentResponse(BaseModel):
     reply: str
     steps: int
     tool_calls: list[str]
-    stopped_by: str        # "model" | "max_steps" | "budget" | "awaiting_approval"
+    stopped_by: str        # "model" | "max_steps" | "budget" | "awaiting_approval" | ...
     cost_eur: float
 
 
@@ -138,18 +141,74 @@ async def _decidi(run_id: str, approvatore: UserContext, *, approvato: bool,
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             "Chi ha richiesto l'azione non può deciderla")
 
-    # 3. la decisione si scrive una volta sola: l'UPDATE condizionato fa vincere un clic,
-    #    e da qui la riga dice chi ha deciso e quando — prima che l'azione parta
-    decisa = await deps.runs.decidi(run_id, da=approvatore.username,
-                                    stato="running" if approvato else "rejected", motivo=motivo)
+    fase = stato.status
+    if fase not in {"awaiting_approval", "awaiting_second_approval"}:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "L'esecuzione non è in attesa di una decisione")
+    if (
+        fase == "awaiting_second_approval" and approvato
+        and stato.decided_by == approvatore.username
+    ):
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "La seconda approvazione deve venire da un responsabile diverso")
+
+    prima_firma = False
+    if fase == "awaiting_approval" and approvato:
+        by_name = {t.name: t for t in build_tools_for(
+            UserContext(username=stato.username, role=stato.role), deps
+        )}
+        prima_firma = any(
+            richiede_seconda_approvazione(
+                by_name, ChatCompletionMessageFunctionToolCall.model_validate(dati)
+            )
+            for dati in stato.pending_calls
+        )
+    nuovo_stato = (
+        "awaiting_second_approval" if prima_firma else
+        "running" if approvato else "rejected"
+    )
+
+    # 3. l'UPDATE condizionato fa vincere un clic e vincola la seconda firma all'identità.
+    decisa = await deps.runs.decidi(
+        run_id, da=approvatore.username, stato=nuovo_stato, stato_atteso=fase, motivo=motivo,
+        primo_approvatore=(
+            stato.decided_by if fase == "awaiting_second_approval" and approvato else None
+        ),
+    )
     if not decisa:
-        raise HTTPException(status.HTTP_409_CONFLICT, "L'esecuzione non è più in attesa")
+        raise HTTPException(status.HTTP_409_CONFLICT, "La decisione è già stata registrata")
+
+    if prima_firma:
+        return AgentResponse(
+            run_id=stato.id,
+            reply=(f"Prima approvazione registrata da {approvatore.username}. "
+                   "Serve l'approvazione di un responsabile diverso; l'azione non è ancora "
+                   "stata eseguita."),
+            steps=stato.steps,
+            tool_calls=stato.tool_calls,
+            stopped_by="awaiting_second_approval",
+            cost_eur=float(stato.cost_eur),
+        )
 
     # 4. si riprende, con i tool di chi aveva chiesto
     ripreso = await riprendi(stato, approvato=approvato, da=approvatore.username,
                              motivo=motivo, deps=deps)
 
+    # il costo di questa ripresa, non del run intero: quello prima era già nel registro
+    await _registra(
+        deps, "agent", stato.username, run_id, ripreso.cost_eur - Decimal(stato.cost_eur)
+    )
+    
     # 5. e si chiude, a meno che il run non si sia fermato di nuovo
     if ripreso.stopped_by != "awaiting_approval":
         await deps.runs.chiudi(run_id, "done" if approvato else "rejected")
     return _risposta(ripreso)
+
+async def _registra(
+    deps: Deps, endpoint: str, username: str, run_id: str | None, costo: Decimal
+) -> None:
+    """Giorno 9: il costo nel registro. La sessione è quella dei servizi dell'agente."""
+    CostLedger(deps.runs.session).aggiungi(
+        endpoint=endpoint, username=username, model=deps.model, cost_eur=costo, run_id=run_id
+    )
+    await deps.runs.session.commit()

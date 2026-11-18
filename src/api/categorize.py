@@ -11,6 +11,7 @@ from src.db.session import get_db
 from src.llm.factory import get_instructor
 from src.llm.prompt import load_prompt
 from src.observability.cost_tracker import CostTracker
+from src.observability.ledger import CostLedger
 from src.services.categorize_service import CategorizeService
 from src.types.categorize import CategorizeRequest, CategorizeResponse
 
@@ -25,7 +26,9 @@ def get_categorize_service(
 ) -> CategorizeService:
     # il tetto della chat vale anche qui: ogni chiamata al modello spende, non solo la chat
     costi = CostTracker(ChatRepository(session), settings.daily_budget_eur)
-    return CategorizeService(client, settings.default_model, CATEGORIZE_PROMPT, costi)
+    return CategorizeService(
+        client, settings.default_model, CATEGORIZE_PROMPT, costi, CostLedger(session)
+    )
 
 
 @router.post("/categorize", response_model=CategorizeResponse)

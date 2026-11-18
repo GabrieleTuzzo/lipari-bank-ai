@@ -1,4 +1,5 @@
 # src/api/advice.py — l'advisor sui documenti, e l'ingestione che lo alimenta
+from decimal import Decimal
 from functools import cache
 from typing import Annotated
 
@@ -17,6 +18,7 @@ from src.llm.factory import get_embedder, get_llm_provider
 from src.llm.prompt import load_prompt
 from src.llm.rewriter import QueryRewriter
 from src.observability.cost_tracker import CostTracker
+from src.observability.ledger import CostLedger
 from src.services.ingest_service import IngestService
 from src.services.rag_service import RAGService
 from src.services.retrieval_service import RetrievalService
@@ -54,22 +56,6 @@ def get_ingest_service(
 ) -> IngestService:
     return IngestService(session, embedder)
 
-
-@router.post("/advice", response_model=AdviceResponse)
-@limiter.limit("15/minute")
-async def advice(
-    req: AdviceRequest,
-    request: Request,
-    user: Annotated[UserContext, Depends(get_current_user)],
-    service: Annotated[RAGService, Depends(get_rag_service)],
-    session: Annotated[AsyncSession, Depends(get_db)],  # la stessa sessione del servizio
-) -> AdviceResponse:
-    del request
-    # il tetto della chat vale anche qui: ogni chiamata al modello spende, non solo la chat
-    await CostTracker(ChatRepository(session), settings.daily_budget_eur).verifica()
-    return await service.advise(req.question, user)
-
-
 # src/api/advice.py — l'endpoint di ingestione: da oggi solo compliance e admin
 @router.post("/documents/ingest", response_model=IngestResponse)
 async def ingest(
@@ -81,3 +67,26 @@ async def ingest(
     del user
     quanti = await service.ingest(req.document_id, req.content, req.metadata, req.visibility)
     return IngestResponse(chunk_count=quanti, embedding_dim=1536)
+
+@router.post("/advice", response_model=AdviceResponse)
+@limiter.limit("15/minute")
+async def advice(
+    request: Request,  # slowapi la pretende: è da lì che legge la chiave
+    req: AdviceRequest,
+    user: Annotated[UserContext, Depends(get_current_user)],
+    service: Annotated[RAGService, Depends(get_rag_service)],
+    session: Annotated[AsyncSession, Depends(get_db)],  # la stessa sessione del servizio
+) -> AdviceResponse:
+    # il tetto della chat vale anche qui: ogni chiamata al modello spende, non solo la chat
+    await CostTracker(ChatRepository(session), settings.daily_budget_eur).verifica()
+    risposta = await service.advise(req.question, user)
+    # Giorno 9: la generazione nel registro. La riscrittura qui non c'è: vedi il Code Blueprint
+    CostLedger(session).aggiungi(
+        endpoint="advice",
+        username=user.username,
+        model=settings.default_model,
+        tokens=risposta.tokens_used,
+        cost_eur=Decimal(str(risposta.cost_eur)),
+    )
+    await session.commit()
+    return risposta

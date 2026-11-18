@@ -14,12 +14,14 @@ from pydantic import BaseModel
 from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from src.api import accounts, advice, auth, categorize, chat, glossary, movements
+from src.api import accounts, admin, advice, auth, categorize, chat, glossary, movements
 from src.config import settings
 from src.exceptions import AppError, RateLimitError
+from src.observability.json_log import configura_log, request_id
 from src.types.error import ErrorResponse, ValidationDetail
 from src.validation import dettaglio_validazione
 
+configura_log()  # Giorno 9: le righe di log diventano JSON, con il request_id
 logger = logging.getLogger(__name__)
 ID_VALIDO = re.compile(r"[A-Za-z0-9-]{8,64}")
 
@@ -135,13 +137,17 @@ async def add_request_id(
     # Se il chiamante ne manda uno, lo stesso id attraversa i due sistemi; se non lo manda,
     # o manda qualcosa che non ha la forma di un id, se ne genera uno nuovo.
     ricevuto = request.headers.get("X-Request-Id", "")
-    request_id = ricevuto if ID_VALIDO.fullmatch(ricevuto) else str(uuid.uuid4())
-    request.state.request_id = request_id  # lo legge l'handler del 500
+    rid = ricevuto if ID_VALIDO.fullmatch(ricevuto) else str(uuid.uuid4())
+    token = request_id.set(rid)  # Giorno 9: da qui ogni riga di log di questa richiesta lo porta
+    request.state.request_id = rid
     inizio = time.perf_counter()
-    response = await call_next(request)
-    response.headers["X-Request-Id"] = request_id
-    response.headers["X-Process-Time"] = f"{time.perf_counter() - inizio:.4f}"
-    return response
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-Id"] = rid
+        response.headers["X-Process-Time"] = f"{time.perf_counter() - inizio:.4f}"
+        return response
+    finally:
+        request_id.reset(token)
 
 
 app.add_middleware(  # registrato per ultimo: è il più esterno
@@ -175,3 +181,4 @@ app.include_router(categorize.router)
 app.include_router(movements.router)
 app.include_router(accounts.router)
 app.include_router(advice.router)
+app.include_router(admin.router)

@@ -100,11 +100,18 @@ async def test_sotto_soglia_non_si_ferma(
     assert await _conta(fabbrica, ComplianceAlert) == 1
 
 
-async def test_senza_importo_si_chiede(client: httpx.AsyncClient, modello: AsyncMock) -> None:
-    modello.chat.completions.create.return_value = chiede(
-        ("apri_segnalazione_compliance",
-         f'{{"account_id": "{CONTO_DI_MARCO}", "motivo": "Movimenti anomali nel mese"}}'))
-    assert (await _chiedi(client))["stopped_by"] == "awaiting_approval"
+async def test_senza_importo_basta_una_firma(client: httpx.AsyncClient, modello: AsyncMock) -> None:
+    modello.chat.completions.create.side_effect = [
+        chiede(("apri_segnalazione_compliance",
+                f'{{"account_id": "{CONTO_DI_MARCO}", "motivo": "Movimenti anomali nel mese"}}')),
+        risposta(testo="Segnalazione aperta."),
+    ]
+    corpo = await _chiedi(client)
+    assert corpo["stopped_by"] == "awaiting_approval"
+    r = await client.post(f"/api/ai/agent/{corpo['run_id']}/approve",
+                          headers={"X-Utente": "grossi"})
+    assert r.status_code == 200, r.text
+    assert r.json()["stopped_by"] == "model"
 
 
 async def test_nello_stesso_passo_non_parte_niente(
@@ -118,8 +125,14 @@ async def test_nello_stesso_passo_non_parte_niente(
     corpo = await _chiedi(client)
     assert corpo["stopped_by"] == "awaiting_approval" and corpo["tool_calls"] == []
 
+    prima = await client.post(f"/api/ai/agent/{corpo['run_id']}/approve",
+                              headers={"X-Utente": "grossi"})
+    assert prima.json()["stopped_by"] == "awaiting_second_approval"
+    assert await _conta(fabbrica, ComplianceAlert) == 0
     r = await client.post(f"/api/ai/agent/{corpo['run_id']}/approve",
-                          headers={"X-Utente": "grossi"})
+                          headers={"X-Utente": "lverdi"})
+    assert r.status_code == 200, r.text
+    assert r.json()["stopped_by"] == "model"
     assert r.json()["tool_calls"] == ["get_account_balance", "apri_segnalazione_compliance"]
     inviati = modello.chat.completions.create.call_args.kwargs["messages"]
     assert [m["tool_call_id"] for m in inviati if m["role"] == "tool"] == ["call_1", "call_2"]
@@ -154,9 +167,27 @@ async def test_approvata_riprende_e_scrive(
     corpo = await _chiedi(client)
     r = await client.post(f"/api/ai/agent/{corpo['run_id']}/approve",
                           headers={"X-Utente": "grossi"})
+    assert r.status_code == 200 and r.json()["stopped_by"] == "awaiting_second_approval"
+    assert await _conta(fabbrica, ComplianceAlert) == 0
+    async with fabbrica() as s:
+        stato = await s.get(AgentRunState, corpo["run_id"])
+    assert stato is not None and (
+        stato.status, stato.decided_by
+    ) == ("awaiting_second_approval", "grossi")
+
+    r = await client.post(f"/api/ai/agent/{corpo['run_id']}/approve",
+                          headers={"X-Utente": "grossi"})
+    assert r.status_code == 403
+    assert await _conta(fabbrica, ComplianceAlert) == 0
+
+    r = await client.post(f"/api/ai/agent/{corpo['run_id']}/approve",
+                          headers={"X-Utente": "lverdi"})
     assert r.status_code == 200 and r.json()["stopped_by"] == "awaiting_approval"
     assert r.json()["steps"] == 2                                  # il passo di prima conta
     assert await _conta(fabbrica, ComplianceAlert) == 1
+    r = await client.post(f"/api/ai/agent/{corpo['run_id']}/approve",
+                          headers={"X-Utente": "grossi"})
+    assert r.status_code == 200 and r.json()["stopped_by"] == "awaiting_second_approval"
     r = await client.post(f"/api/ai/agent/{corpo['run_id']}/approve",
                           headers={"X-Utente": "lverdi"})
     assert r.status_code == 200 and r.json()["stopped_by"] == "model"
@@ -167,7 +198,10 @@ async def test_approvata_riprende_e_scrive(
     assert stato is not None and (stato.status, stato.decided_by) == ("done", "lverdi")
     # la seconda pausa non ha cancellato la prima firma: lo storico le tiene tutte e due
     firme = [(d["da"], d["esito"]) for d in stato.decisions]
-    assert firme == [("grossi", "approvata"), ("lverdi", "approvata")]
+    assert firme == [
+        ("grossi", "approvata"), ("lverdi", "approvata"),
+        ("grossi", "approvata"), ("lverdi", "approvata"),
+    ]
 
 
 async def test_chi_chiede_non_approva(client: httpx.AsyncClient, modello: AsyncMock) -> None:
@@ -200,6 +234,13 @@ async def test_doppio_clic_una_sola_segnalazione(
     url, chi = f"/api/ai/agent/{corpo['run_id']}/approve", {"X-Utente": "grossi"}
     esiti = await asyncio.gather(client.post(url, headers=chi), client.post(url, headers=chi))
     assert sorted(r.status_code for r in esiti) == [200, 409]
+    async with fabbrica() as s:
+        stato = await s.get(AgentRunState, corpo["run_id"])
+    assert stato is not None and stato.status == "awaiting_second_approval"
+    assert await _conta(fabbrica, ComplianceAlert) == 0
+
+    r = await client.post(url, headers={"X-Utente": "lverdi"})
+    assert r.status_code == 200
     assert await _conta(fabbrica, ComplianceAlert) == 1
 
 
@@ -211,7 +252,10 @@ async def test_respinta_non_scrive_e_non_ritenta(
         risposta(testo="La richiesta è stata respinta dalla Compliance."),
     ]
     corpo = await _chiedi(client)
-    r = await client.post(f"/api/ai/agent/{corpo['run_id']}/reject", headers={"X-Utente": "grossi"},
+    prima = await client.post(f"/api/ai/agent/{corpo['run_id']}/approve",
+                              headers={"X-Utente": "grossi"})
+    assert prima.json()["stopped_by"] == "awaiting_second_approval"
+    r = await client.post(f"/api/ai/agent/{corpo['run_id']}/reject", headers={"X-Utente": "lverdi"},
                           json={"motivo": "Operazione già segnalata dalla filiale ieri"})
     assert r.status_code == 200
     osservazione = modello.chat.completions.create.call_args.kwargs["messages"][-1]["content"]
@@ -232,11 +276,16 @@ async def test_l_approvazione_sopravvive_a_un_riavvio(
     corpo = await _chiedi(client)
     assert corpo["stopped_by"] == "awaiting_approval"
     assert await _conta(fabbrica, ComplianceAlert) == 0
+    prima = await client.post(f"/api/ai/agent/{corpo['run_id']}/approve",
+                              headers={"X-Utente": "grossi"})
+    assert prima.status_code == 200
+    assert prima.json()["stopped_by"] == "awaiting_second_approval"
+    assert await _conta(fabbrica, ComplianceAlert) == 0
 
     # il riavvio: un altro interprete Python, che di questo processo non ha niente in memoria
     processo = await asyncio.create_subprocess_exec(
         sys.executable, "-m", "tests.riavvio_altro_processo",
-        str(tmp_path / "banca.db"), corpo["run_id"],
+        str(tmp_path / "banca.db"), corpo["run_id"], "lverdi",
         cwd=RADICE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
     )
     uscita, errori = await asyncio.wait_for(processo.communicate(), timeout=60)

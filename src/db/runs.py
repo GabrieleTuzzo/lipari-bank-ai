@@ -33,25 +33,33 @@ class RunRepository:
     async def get(self, run_id: str) -> AgentRunState | None:
         return await self.session.get(AgentRunState, run_id)
 
-    async def decidi(self, run_id: str, *, da: str, stato: str, motivo: str | None) -> bool:
-        """Esce dall'attesa, solo se era in attesa. Il bool dice se questa decisione ha vinto.
+    async def decidi(
+        self, run_id: str, *, da: str, stato: str, stato_atteso: str, motivo: str | None,
+        primo_approvatore: str | None = None,
+    ) -> bool:
+        """Cambia stato solo dalla fase attesa; il bool dice se questa decisione ha vinto.
 
         È un UPDATE condizionato, non un «leggi e poi scrivi»: con due clic insieme uno solo
-        trova la riga in attesa, e l'altro riceve False.
+        trova la fase in attesa, e l'altro riceve False. `primo_approvatore` vincola
+        atomicamente la seconda firma alla firma già registrata.
         """
-        esito = await self.session.execute(
-            update(AgentRunState)
-            .where(AgentRunState.id == run_id, AgentRunState.status == "awaiting_approval")
-            .values(status=stato, decided_by=da, decision_reason=motivo,
-                    updated_at=datetime.now(UTC))
+        query = update(AgentRunState).where(
+            AgentRunState.id == run_id, AgentRunState.status == stato_atteso
         )
+        if primo_approvatore is not None:
+            query = query.where(AgentRunState.decided_by == primo_approvatore)
+        esito = await self.session.execute(query.values(
+            status=stato, decided_by=da, decision_reason=motivo,
+            updated_at=datetime.now(UTC),
+        ))
         vinta = bool(getattr(esito, "rowcount", 0))
         if vinta:
             # nello storico, nella stessa transazione: chi ha deciso cosa, prima che l'azione parta
             riga = await self.session.get(AgentRunState, run_id, populate_existing=True)
             if riga is not None:
                 decisione = {
-                    "da": da, "esito": "approvata" if stato == "running" else "respinta",
+                    "da": da,
+                    "esito": "respinta" if stato == "rejected" else "approvata",
                     "motivo": motivo, "azione": riga.description,
                     "quando": datetime.now(UTC).isoformat(),
                 }

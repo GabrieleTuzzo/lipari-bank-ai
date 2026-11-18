@@ -64,6 +64,11 @@ del bonifico. Le descrizioni distinguono i casi d'uso per aiutare il modello a s
 Più tool non garantiscono una scelta migliore: le descrizioni delimitano esplicitamente cosa
 ciascun tool può verificare.
 
+Le segnalazioni sopra la soglia configurata (`SOGLIA_APPROVAZIONE_EUR`, predefinita a
+5.000 EUR) richiedono due approvatori distinti. Dopo la prima firma il run resta nello stato
+`awaiting_second_approval`: l'azione non parte e un riavvio non perde la firma; la seconda
+firma può arrivare solo da un altro responsabile.
+
 ## Modello dati
 
 I beneficiari appartengono a un cliente; i mandati collegano un conto al beneficiario;

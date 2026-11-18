@@ -1,10 +1,12 @@
-# src/services/categorize_service.py — lo schema imposto al modello, e validato
+# src/services/categorize_service.py — Giorno 9: lo schema imposto al modello, e il suo costo
 import instructor
 import openai
 from instructor.core import InstructorRetryException
 
+from src.agents.loop import costo_chiamata
 from src.exceptions import LLMProviderError
 from src.observability.cost_tracker import CostTracker
+from src.observability.ledger import CostLedger
 from src.types.categorize import CategorizeRequest, CategorizeResponse
 
 
@@ -15,17 +17,19 @@ class CategorizeService:
         model: str,
         system_prompt: str,
         costi: CostTracker | None = None,
+        registro: CostLedger | None = None,
     ) -> None:
         self.client = client
         self.model = model
         self.system_prompt = system_prompt
         self.costi = costi  # il tetto della chat: l'endpoint lo passa sempre
+        self.registro = registro  # Giorno 9: dove va il costo, con quello di chat, advice, agente
 
     async def categorize(self, req: CategorizeRequest) -> CategorizeResponse:
         if self.costi is not None:
             await self.costi.verifica()  # prima di spendere: ogni chiamata al modello spende
         try:
-            return await self.client.chat.completions.create(
+            risposta, completion = await self.client.chat.completions.create_with_completion(
                 model=self.model,
                 response_model=CategorizeResponse,
                 messages=[
@@ -46,3 +50,15 @@ class CategorizeService:
             raise LLMProviderError("openai", f"risposta fuori schema: {e}") from e
         except openai.APIError as e:  # fornitore giù, modello sconosciuto, chiave rifiutata
             raise LLMProviderError("openai", str(e)) from e
+        if self.registro is not None:
+            # l'usage che Instructor restituisce somma anche i tentativi respinti: pagati tutti
+            uso = completion.usage
+            self.registro.aggiungi(
+                endpoint="categorize",
+                username="-",  # la categorizzazione non chiede chi sei
+                model=self.model,
+                tokens=uso.total_tokens if uso else 0,
+                cost_eur=costo_chiamata(uso, self.model),
+            )
+            await self.registro.session.commit()
+        return risposta
