@@ -54,6 +54,21 @@ Per misurare il miglioramento del recupero serve confrontare top-5 e top-20 rior
 domande con passaggi rilevanti etichettati: i test sintetici verificano il flusso e il calcolo
 del costo, non stimano la qualità sul corpus reale.
 
+## Valutazione del giudice
+
+`src.evaluation.judge.eval_giudice` valuta una risposta dell'advisor su quattro criteri separati:
+correttezza, completezza, citazioni e sicurezza. Ogni criterio riceve 0, 1 o 2.
+
+Per misurare il self-bias serve un dataset JSON con almeno 20 casi già giudicati a mano:
+
+```powershell
+uv run python -m scripts.eval_giudice --casi eval/giudizi_20.json
+```
+
+Ogni elemento contiene `domanda`, `risposta`, `passaggi` e `giudizio_umano`.
+Il campo `giudizio_umano` usa gli stessi quattro punteggi. Se generatore e giudice hanno lo stesso
+modello, il risultato segnala esplicitamente `self_bias: true`.
+
 ## Tool dell'agente
 
 L'agente di filiale espone sette tool: ricerca dei conti di un cliente, saldo, movimenti recenti,

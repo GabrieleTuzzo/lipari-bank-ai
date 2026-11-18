@@ -6,6 +6,7 @@ _PROMPT_NAMES = {
     "categorize_system_v1",
     "advice_system_v1",
     "rewrite_system_v1",
+    "judge_system_v1",
 }
 
 
