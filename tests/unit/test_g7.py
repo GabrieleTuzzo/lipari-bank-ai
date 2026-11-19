@@ -28,7 +28,7 @@ from src.api.agent import router
 from src.auth.deps import UserContext, get_current_user
 from src.db.models import ComplianceAlert
 from src.db.repos import AccountRepository
-from src.services.retrieval_service import RetrievalResult
+from src.services.retrieval_service import TOP_K_CONTESTO, RetrievalResult
 from tests.conftest import (
     CLIENTE_ALTRUI,
     CLIENTE_DI_MARCO,
@@ -234,7 +234,7 @@ async def test_il_passaggio_torna_troncato_alla_fonte(
     assert esito == "[POL-AML-07] " + "x" * 300
     # il ruolo viene dalla closure, e i passaggi sono tre
     deps_spia.retrieval.search_for_user.assert_awaited_once_with(
-        [0.1, 0.2, 0.3], marco.role, top_k=3
+        [0.1, 0.2, 0.3], marco.role, top_k=TOP_K_CONTESTO
     )
 
 

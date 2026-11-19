@@ -10,7 +10,7 @@ from src.llm.embedding_client import EmbeddingClient
 from src.llm.rewriter import QueryRewriter
 from src.llm.types import Message
 from src.services.reranking_service import RerankingError, RerankingService
-from src.services.retrieval_service import RetrievalResult, RetrievalService
+from src.services.retrieval_service import TOP_K_CONTESTO, RetrievalResult, RetrievalService
 from src.types.advice import AdviceResponse, Citation
 
 logger = logging.getLogger(__name__)
@@ -188,14 +188,16 @@ class RAGService:
         started = perf_counter()
         try:
             async with asyncio.timeout(self.TIMEOUT_FASE_S):
-                ranked = await self.reranking.rerank(rewritten_query, candidates, top_k=5)
+                ranked = await self.reranking.rerank(
+                    rewritten_query, candidates, top_k=TOP_K_CONTESTO
+                )
             passages = ranked.passages
             rerank_tokens = ranked.tokens_used
             rerank_cost = ranked.cost_eur
             rerank_latency = ranked.latency_ms
         except (LLMProviderError, RerankingError, TimeoutError) as exc:
             logger.warning("advice_reranking_fallback", extra={"role": user.role})
-            passages = candidates[:5]
+            passages = candidates[:TOP_K_CONTESTO]
             rerank_tokens = 0
             rerank_cost = 0.0
             rerank_latency = 0.0

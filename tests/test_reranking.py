@@ -10,7 +10,7 @@ from src.llm.rewriter import QueryRewriter
 from src.llm.types import LLMResponse, Message, ToolSpec
 from src.services.rag_service import RAGService
 from src.services.reranking_service import RerankingError, RerankingService
-from src.services.retrieval_service import RetrievalResult, RetrievalService
+from src.services.retrieval_service import TOP_K_CONTESTO, RetrievalResult, RetrievalService
 
 
 class ModelloDiTest:
@@ -87,10 +87,12 @@ async def test_rag_reranks_20_candidates_and_reports_per_question_cost() -> None
         UserContext(username="test", role="operator"),
     )
 
-    baseline_recall = len({p.chunk_id for p in passages[:5]} & relevant) / len(relevant)
-    reranked_recall = len(set(ranked_ids[:5]) & relevant) / len(relevant)
+    baseline_recall = (
+        len({p.chunk_id for p in passages[:TOP_K_CONTESTO]} & relevant) / len(relevant)
+    )
+    reranked_recall = len(set(ranked_ids[:TOP_K_CONTESTO]) & relevant) / len(relevant)
     assert retrieval.top_k == 20
-    assert baseline_recall == 0.0 and reranked_recall == 1.0
+    assert baseline_recall == 0.0 and reranked_recall == 3 / 5
     assert response.retrieved_chunks == 20
     assert response.tokens_used == 120
     assert response.cost_eur == pytest.approx(0.0012)
@@ -98,6 +100,8 @@ async def test_rag_reranks_20_candidates_and_reports_per_question_cost() -> None
     assert response.rerank_cost_eur == pytest.approx(0.0002)
     assert response.rerank_latency_ms >= 0
     assert response.citations[0].chunk_id == "19"
+    contesto_generazione = llm.requests[1][1].content
+    assert "[fonte-3]" in contesto_generazione and "[fonte-4]" not in contesto_generazione
     assert len(llm.requests) == 2
 
 

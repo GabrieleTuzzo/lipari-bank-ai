@@ -8,6 +8,7 @@ from src.agents.deps import Deps
 from src.agents.registry import Tool, impronta
 from src.auth.deps import UserContext
 from src.config import settings
+from src.services.retrieval_service import TOP_K_CONTESTO
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +139,7 @@ def build_tools_for(user: UserContext, deps: Deps) -> list[Tool]:
     async def documenti(a: RicercaArgs) -> str:
         # il retrieval del Giorno 6, con l'ACL del ruolo: non è un tool nuovo
         passaggi = await deps.retrieval.search_for_user(
-            await deps.embedder.embed_one(a.query), user.role, top_k=3
+            await deps.embedder.embed_one(a.query), user.role, top_k=TOP_K_CONTESTO
         )
         if not passaggi:
             return NIENTE_NEI_DOCUMENTI

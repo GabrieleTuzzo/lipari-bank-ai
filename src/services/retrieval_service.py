@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.auth.acl import visible_to
 
 SOGLIA_PREDEFINITA = 0.35  # da tarare sui propri documenti: non è un numero universale
+TOP_K_CONTESTO = 3
 
 
 class RetrievalResult(BaseModel):
